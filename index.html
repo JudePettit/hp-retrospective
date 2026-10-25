@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en" data-suite="hp">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101820">
+  <title>H&amp;P Retrospective · JDP-I H&amp;P</title>
+  <meta name="description" content="Who led each country and which political events happened, year by year from 1926 to today, with historical borders.">
+  <link rel="icon" href="https://jdpi.pages.dev/design/brand-jdpi.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://jdpi.pages.dev/design/jdpi.css">
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://jdpi.pages.dev/design/jdpi-bar.js" data-suite="hp" data-module="retrospective" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div>
+        <p class="eyebrow" data-jdpi-standalone>JDP-I H&amp;P · History &amp; Politics</p>
+        <h1>H&amp;P Retrospective</h1>
+        <p class="subtitle" id="status">Loading historical data…</p>
+      </div>
+    </div>
+    <div class="controls">
+      <div class="search-wrap">
+        <input id="search" type="search" placeholder="Search a country or leader…" autocomplete="off" aria-label="Search countries and leaders">
+        <ul id="search-results" class="search-results" role="listbox" hidden></ul>
+      </div>
+      <div class="year-badge" aria-live="polite"><span class="label">Year</span><b id="year-big">2026</b></div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="map-wrap" aria-label="Historical map">
+      <svg id="map" role="img" aria-label="Map of state borders for the selected year"></svg>
+      <div class="map-tools">
+        <button type="button" id="zoom-in" aria-label="Zoom in">+</button>
+        <button type="button" id="zoom-out" aria-label="Zoom out">−</button>
+        <button type="button" id="zoom-reset" aria-label="Reset view">⟲</button>
+      </div>
+      <div class="legend">
+        <h4>This year</h4>
+        <ul>
+          <li><span class="swatch" style="background:var(--c-change)"></span>New leader</li>
+          <li><span class="swatch" style="background:var(--c-irregular)"></span>Irregular seizure of power</li>
+          <li><span class="swatch" style="background:var(--c-border)"></span>Border change</li>
+          <li><span class="swatch" style="background:var(--c-steady)"></span>No change</li>
+          <li><span class="swatch" style="background:var(--land-inactive)"></span>Not covered</li>
+        </ul>
+      </div>
+      <div id="tooltip" class="tooltip" hidden></div>
+      <div id="anim-label" class="anim-label" hidden></div>
+    </section>
+    <aside id="panel" class="panel" aria-live="polite"></aside>
+  </main>
+
+  <footer class="timeline" aria-label="Year selector">
+    <button type="button" id="prev" class="tl-btn" aria-label="Previous year">‹</button>
+    <button type="button" id="play" class="tl-btn play" aria-label="Play through the years">▶</button>
+    <div class="slider-wrap">
+      <input type="range" id="year" min="1926" max="2026" step="1" value="2026" aria-label="Year">
+      <div class="ticks" id="ticks" aria-hidden="true"></div>
+    </div>
+    <button type="button" id="next" class="tl-btn" aria-label="Next year">›</button>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

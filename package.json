@@ -1,0 +1,1 @@
+{"name":"hp-retrospective","private":true,"type":"module","scripts":{"build-data":"node --max-old-space-size=4096 scripts/build-data.mjs","test":"node --test --test-concurrency=1 tests/e2e.test.mjs"},"devDependencies":{"playwright-core":"^1.56.1"}}

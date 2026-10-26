@@ -22,6 +22,14 @@ async function wb(params) {
 }
 const time = q => q?.[0]?.datavalue?.value?.time?.replace(/^\+/, '').slice(0, 10).replace(/-00/g, '-01') || null;
 
+// Leaders whose Wikidata item had no English label arrive named by QID; use their article title instead.
+for (const c of Object.values(data.countries)) for (const p of [...c.leaders, ...(c.offices || [])]) {
+  if (/^Q\d+$/.test(p.full || p.name) && titleOf(p.url)) {
+    const t = titleOf(p.url).replace(/ \(.*\)$/, '');
+    p.full = t; p.name = t.split(' ').at(-1);
+  }
+}
+
 const people = [];
 for (const c of Object.values(data.countries)) for (const p of [...c.leaders, ...(c.offices || [])]) if (titleOf(p.url)) people.push(p);
 const titles = [...new Set(people.map(p => titleOf(p.url)))];

@@ -128,3 +128,12 @@ events, for each year. (If 100 years proves too hard, start with a decade — bu
 - Jude may be asleep. Continue as many requests as possible without him. If a step needs his response and he is unresponsive for >5 minutes, SKIP it and move to the next task (note it as pending).
 - Order: (1) check Supabase secret fix + FR translation test (skip if still misnamed: Custom secrets row named with key text; Jude must delete it, revoke that key, and save a new sk-ant-api03 key as ANTHROPIC_API_KEY); (2) Realtime Battlefield; (3) Retrospective Battlefield; (4) if everything is done, analyse ALL modules (JDP-I shell, Q: Briefing/Calendar/Headlines/Volatility/PESTLE, H&P: Political Atlas/Retrospective, F&E: Double Signal + trader) and write a list of suggested improvements (publish as an artifact/report and send to Jude).
 - Never do things that need his approval anyway (deleting data, entering keys/passwords, purchases, live trading).
+
+## 26 Oct 2026 ~03:30–04:30 UTC (resumed session)
+- Translation: still "not configured" (Supabase secret misnamed). PENDING Jude: delete the misnamed secret, revoke that key, save a fresh key as ANTHROPIC_API_KEY.
+- Realtime Battlefield LIVE (Q): q/battlefield.html. Data: battlefield/data/realtime.json (UCDP candidate events, YTD). Weekly GH Action battlefield-refresh.yml rebuilds it when UCDP publishes. Wars grouped in battlefield/scripts/wars.mjs.
+- Retrospective Battlefield LIVE, moved to H&P at Jude's request: battlefield/history/ (UCDP/PRIO 1946–2025 + COW 1926–45). See-more pop-outs for long lists.
+- Map tiles: Carto now needs an API key, so Headlines and Battlefield were switched to Esri World Dark Gray.
+- H&P Retrospective: parties in power (Wikidata P102, by tenure) and a yearly overview (generated, plus the first events from Wikipedia's "YEAR in COUNTRY"). scripts/build-parties.mjs is chained into build-data.
+- Political Calendar: calendar/data/<decade>.json (3,511 events from 1980: Retrospective, UCDP, Wikidata, landmarks). Type filters, Month/Year views, month picker, country highlighting (?countries=).
+- Tests: jdpi 14/14 live; hp-retrospective 10/10 live.

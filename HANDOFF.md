@@ -40,6 +40,25 @@ events, for each year. (If 100 years proves too hard, start with a decade — bu
   works because Supabase already has saved snapshots. Fix as part of the redesign: fetch and translate headlines
   server-side on a schedule (one country at a time, respecting GDELT's ~1 request per 5 s), store them in
   Supabase, and have the page read only from Supabase.
+- **Country Headlines redesign — decisions (25 Oct ~23:40 UTC):** popularity = front-page prominence (top 3 items
+  of each outlet's main RSS feed); translation via Claude API (model claude-opus-5-5 per skill default; batch ~15
+  headlines per call; roughly $2–3/week at ~3,500 headlines/week — tell Jude this corrects the earlier "<$1" estimate,
+  which assumed a smaller model; he can choose Haiku to cut cost). Anthropic key goes in Supabase secrets
+  (ANTHROPIC_API_KEY) — Jude pastes it himself in the Supabase dashboard.
+  Plan:
+  1. data/outlets.json in jdpi: 5 most popular news outlets per covered country (78 countries; ISO2 key), each
+     {name, domain, rss, lang}. Verify every RSS feed with a script; replace failures.
+  2. Supabase (project rpatomxgobrljilgbmub, via connector): table country_top_stories(snapshot_date, country_code,
+     outlet, outlet_domain, outlet_rank, story_rank, title_original, title_en, lang, url, published_at, captured_at),
+     public read RLS. Edge function refresh-top-stories: processes N countries per call (fetch 5 feeds, top 3 items,
+     translate non-English titles in one Claude call, upsert). pg_cron + pg_net schedule every ~15 min cycling
+     through countries so each refreshes daily.
+  3. q/headlines.html: read country_top_stories for the selected country (latest snapshot), show outlet → 3
+     stories (English title linking to the original-language URL, original title small underneath). Fix country
+     identification (ISO2 from map; France/Norway -99 codes; name map). Remove direct GDELT calls.
+  4. Archives: day/week/month from snapshots; "previous decades" → per-year "most popular stories" = stories that
+     stayed in outlets' top 3 for the most days that year (only from collection start onwards; earlier years link
+     to Wikipedia "<year> in <country>").
 - **Double Signal automated trading — exploration only. Do NOT place or enable any live trades.** Jude wants to
   explore using Double Signal alerts (C:\Users\judep\Documents\Codex\2026-10-25\use-posthog-to-answer-a-product\outputs\double-signal)
   to trade a €200 pot via Alpaca (or eToro): on each alert spend half the pot, split equally across the stocks
@@ -88,3 +107,24 @@ events, for each year. (If 100 years proves too hard, start with a decade — bu
   Jude asked to merge this session into the "Political leadership app" chat, so work was handed back there.
   No front-end files, repos or deploys were created by this session.
 
+
+## Progress log (main session)
+- 26 Oct ~00:00 UTC: Retrospective LIVE at hp-retrospective.pages.dev and in JDP-I (#/hp/retrospective). All suites pass: platform 9/9, Retrospective 9/9, Political Atlas 16/16, trader 7/7.
+- Headlines step 1 DONE: jdpi/headlines/outlets.txt (names/homepages, optional known RSS as 3rd field) -> discover-feeds.mjs -> outlets.json (294/389 feeds; 51 via Google News fallback; thin: HN SV CR DM GD GL CH LI SM AL =2, BG=1). Committed to jdpi.
+- NEXT: step 2 Supabase table + edge function refresh-top-stories + cron; step 3 rewrite q/headlines.html; Jude must add ANTHROPIC_API_KEY to Supabase secrets.
+- Supabase migration country_top_stories APPLIED (table + public read RLS + pg_net). Edge function source at jdpi/headlines/refresh-top-stories/index.ts; DEPLOY WAS BLOCKED pending Jude's explicit approval (public function, spends Anthropic credit). After approval: deploy (verify_jwt false), Jude adds ANTHROPIC_API_KEY secret, add pg_cron job every 10 min calling it with {limit:6}, then rewrite q/headlines.html to read country_top_stories.
+- 26 Oct ~00:15 UTC: Jude APPROVED; edge function refresh-top-stories DEPLOYED (verify_jwt false) and tested (GB: 15 stories / 5 outlets). pg_cron job 'refresh-top-stories' every 10 min, limit 6 -> all countries daily. Translation 'not configured' until Jude adds ANTHROPIC_API_KEY in Supabase > Edge Functions > Secrets. Feed quality: some outlet feeds lead with features (Guardian UK, Daily Mail showbiz) - swap to news-section feeds via 3rd field in outlets.txt.
+- NEWS: 25 Oct BBC/Sky report Serbia's Vucic conceded the 25 Oct election to the student-led movement - update Political Atlas SRB (and Bulgaria presidential result).
+- NEXT: rewrite jdpi/q/headlines.html loadNews to read country_top_stories (latest snapshot for ISO2), group by outlet, show title_en (fallback title_original + 'translation pending') linking to url, original title small; remove GDELT calls; archives from snapshots.
+- 26 Oct ~00:40 UTC: Country Headlines LIVE on jdpi.pages.dev (q/headlines.html reads country_top_stories; grouped by outlet; week/month rank by front-page persistence). jdpi tests 10/10 live. Cron collecting (7 countries so far). REMAINING: Jude adds ANTHROPIC_API_KEY to Supabase secrets; per-year 'most popular stories' view for decade archives; better news-section feeds for some outlets; Political Atlas SRB update (Vucic conceded 25 Oct) + Bulgaria presidential result; trader -> Double Signal outbox integration.
+- 26 Oct ~01:00 UTC: Political Atlas updated (Serbia: Students' List won 25 Oct, Vucic conceded - provisional; Bulgaria 1st round held, results pending) - live, 16/16 tests. Outlet feeds: 296/389 with news-only overrides for Guardian/Daily Mail/Independent/Fox/SRF/NZZ/Dnevnik.
+## QUEUED NEW REQUEST (after current tasks): two new Q-suite modules
+- **Realtime Battlefield** (Q): like Delta Sweep / global conflict monitors but refreshes less often. Plaintext/lightweight context for ALL extant conflicts; shows which conflicts belong to which war(s); keeps a year-to-date archive broken down by month with insight per war and warzone. SAME MAP LAYOUT as Country Headlines (q/headlines.html: Leaflet map + side panel).
+- **Retrospective Battlefield** (Q): same idea but with map + year slider like H&P Retrospective, covering 1926-2025. Candidate data: UCDP/PRIO Armed Conflict Dataset (1946-) + UCDP GED (1989-) + Correlates of War war lists (pre-1946) + Wikipedia war articles for links; current conflicts via ACLED (needs key) or UCDP Candidate events + news feeds.
+- Remaining before that: trader <-> Double Signal outbox integration; per-year 'most popular stories' view; ANTHROPIC_API_KEY in Supabase (Jude).
+- 26 Oct ~01:20 UTC: CURRENT TASKS COMPLETE. Trader: 'ingest <status.json>' acts on Double Signal /api/status alerts (grouped by createdAt minute, dedup by id, alert price = peakPrice); README updated; 7/7 tests. Headlines: 'Yearly top stories' archive (period=year) + registry submodule; jdpi tests 10/10 live. NEXT: Realtime Battlefield + Retrospective Battlefield (see QUEUED section).
+- Battlefield DECISIONS (Jude, 26 Oct): Realtime = UCDP (conflicts grouped into wars + monthly GED/Candidate events) + conflict stories from country_top_stories, summarised into plaintext by Claude; Retrospective = UCDP/PRIO Armed Conflict Dataset 1946-2025 + Correlates of War war lists 1926-1945, Wikipedia links, slider like H&P Retrospective. Both in the Q suite; Realtime uses the Country Headlines map layout (Leaflet + side panel).
+## STANDING INSTRUCTIONS FROM JUDE (26 Oct ~00:40 UTC) — apply when resuming at 03:30
+- Jude may be asleep. Continue as many requests as possible without him. If a step needs his response and he is unresponsive for >5 minutes, SKIP it and move to the next task (note it as pending).
+- Order: (1) check Supabase secret fix + FR translation test (skip if still misnamed: Custom secrets row named with key text; Jude must delete it, revoke that key, and save a new sk-ant-api03 key as ANTHROPIC_API_KEY); (2) Realtime Battlefield; (3) Retrospective Battlefield; (4) if everything is done, analyse ALL modules (JDP-I shell, Q: Briefing/Calendar/Headlines/Volatility/PESTLE, H&P: Political Atlas/Retrospective, F&E: Double Signal + trader) and write a list of suggested improvements (publish as an artifact/report and send to Jude).
+- Never do things that need his approval anyway (deleting data, entering keys/passwords, purchases, live trading).

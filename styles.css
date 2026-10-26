@@ -124,3 +124,10 @@ h1 { font: 700 18px var(--font-display); margin: 0; letter-spacing: -.02em; }
   .legend { font-size: 11px; }
   .ticks span:nth-child(even) { display: none; }
 }
+
+.parties { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.party { font: 500 11px var(--font-ui); color: var(--text); background: rgba(109, 218, 200, .08); border: 1px solid var(--border); border-radius: 99px; padding: 2px 9px; text-decoration: none; }
+.party:hover { border-color: var(--accent); color: var(--accent); }
+.overview { margin: 0 0 8px; line-height: 1.6; }
+.wiki-list { margin: 4px 0 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
+.wiki-list li { margin: 3px 0; }

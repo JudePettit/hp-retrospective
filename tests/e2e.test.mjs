@@ -54,6 +54,17 @@ test('Germany 1938: leader, events, border changes, links', async () => {
   assert.ok(await page.locator('a[href*="wikipedia.org/wiki/Adolf_Hitler"]').count(), 'leader link');
 });
 
+test('parties in power and the yearly overview follow the year', async () => {
+  await open('#y=2010&c=200');
+  await page.waitForSelector('#wiki-events li', { timeout: 15000 });
+  const panel = await page.textContent('#panel');
+  assert.match(panel, /Parties in power in 2010/);
+  assert.match(panel, /Conservative Party/);
+  assert.match(panel, /Labour Party/); // Brown until May, then Cameron
+  assert.match(await page.textContent('.overview'), /2 leaders in 2010/);
+  assert.ok(await page.locator('#wiki-events a[href*="2010_in_the_United_Kingdom"]').count(), 'Wikipedia source link');
+});
+
 test('GIF download produces an animated GIF', async () => {
   await open('#y=1938&c=255');
   const [download] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.click('#gif')]);

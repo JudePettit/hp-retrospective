@@ -47,6 +47,13 @@ const fmt = d => {
   const [y, m, dd] = d.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, dd)).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 };
+// Party memberships (from Wikidata) that applied during year y; undated memberships always apply.
+function partiesAt(p, y) {
+  const all = p.parties || [];
+  const now = all.filter(m => (!m.s || m.s <= `${y}-12-31`) && (!m.e || m.e >= `${y}-01-01`));
+  return (now.length ? now : all.filter(m => !m.s && !m.e)).slice(0, 2);
+}
+const partyChips = (p, y) => partiesAt(p, y).map(m => `<a class="party" href="${esc(m.url)}" target="_blank" rel="noopener">${esc(m.name)}</a>`).join('');
 const wiki = (title) => `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`;
 const leaderLink = (l, gw) => l.url || `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(`${l.full || l.name} ${country(gw).name}`)}`;
 
@@ -119,18 +126,27 @@ function renderPanel() {
   const events = eventsIn(gw, y);
   const changes = borderChanges(gw, y);
   const page = c.yearPages.includes(y) ? `${y} in ${c.yearPage}` : null;
+  const ruling = new Map();
+  for (const p of [...leaders, ...offices]) for (const m of partiesAt(p, y)) ruling.set(m.url, m);
+  const name = shape ? displayName(gw, shape.properties.name, dateFor(y)) : c.name;
 
   panel.innerHTML = `<button class="close" type="button" id="close" aria-label="Close">✕</button>
-    <h2>${esc(shape ? displayName(gw, shape.properties.name, dateFor(y)) : c.name)}</h2>
+    <h2>${esc(name)}</h2>
     <p class="sub">${shape ? `${y}` : `Not an independent state at the end of ${y}`}</p>
+    <h3>Political overview of ${y}</h3>
+    <p class="overview">${esc(overviewText(name, y, leaders, offices, events, [...ruling.values()]))}</p>
+    <div id="wiki-events" class="wiki-events">${page ? '<p class="empty">Loading events from Wikipedia…</p>' : ''}</div>
+    ${ruling.size ? `<h3>Parties in power in ${y}</h3><div class="parties">${[...ruling.values()].map(m => `<a class="party" href="${esc(m.url)}" target="_blank" rel="noopener">${esc(m.name)}</a>`).join('')}</div><p class="note" style="margin-top:6px">Party of each leader in office, from Wikidata. Where Wikidata has no membership dates, every party the person belonged to is shown.</p>` : ''}
     <h3>In charge during ${y}</h3>
     ${leaders.length ? leaders.map(l => `<div class="leader">
         <div class="who"><a href="${esc(leaderLink(l, gw))}" target="_blank" rel="noopener">${esc(l.full || l.name)}</a>${l.entry === 'Irregular' ? '<span class="tag irregular">irregular entry</span>' : ''}</div>
         <div class="meta">${fmt(l.start)} – ${fmt(l.end)}${l.entry && l.entry !== 'Regular' && l.entry !== 'Irregular' ? ` · entry: ${esc(l.entry)}` : ''}${l.exit && l.exit !== 'Regular' ? ` · exit: ${esc(l.exit)}` : ''}</div>
+        ${partyChips(l, y) ? `<div class="parties">${partyChips(l, y)}</div>` : ''}
       </div>`).join('') : '<p class="empty">No leader recorded for this year.</p>'}
     ${offices.length ? `<h3>Also in office</h3>${offices.map(o => `<div class="leader">
         <div class="who"><a href="${esc(o.url || wiki(o.full))}" target="_blank" rel="noopener">${esc(o.full)}</a><span class="tag office">${o.office === 'hos' ? 'Head of state' : 'Head of government'}</span></div>
-        <div class="meta">${fmt(o.start)} – ${fmt(o.end)}</div></div>`).join('')}` : ''}
+        <div class="meta">${fmt(o.start)} – ${fmt(o.end)}</div>
+        ${partyChips(o, y) ? `<div class="parties">${partyChips(o, y)}</div>` : ''}</div>`).join('')}` : ''}
     <h3>Key events in ${y}</h3>
     ${events.length ? `<ul class="events">${events.map(e => eventItem(e)).join('')}</ul>` : '<p class="empty">No recorded events this year.</p>'}
     ${changes.length ? `<h3>Border changes in ${y}</h3>
@@ -140,10 +156,59 @@ function renderPanel() {
     ${page ? `<p class="note">More: <a href="${wiki(page)}" target="_blank" rel="noopener">${esc(page)}</a> on Wikipedia</p>` : ''}
     ${c.iso3 ? `<p class="note">Today: <a href="https://political-atlas.pages.dev/#${c.iso3}" target="_blank" rel="noopener">${esc(c.name)} in Political Atlas</a></p>` : ''}`;
   $('#close').onclick = () => select(null);
+  if (page) loadWikiEvents(page, gw, y);
   if (changes.length) {
     $('#animate').onclick = () => animateYear(gw, y, changes);
     $('#gif').onclick = () => downloadGif(gw, y, changes);
   }
+}
+
+/* ---------------------------------------------------------------- yearly overview */
+// A short plain-English summary built from the year's leaders, parties and events.
+function overviewText(name, y, leaders, offices, events, ruling) {
+  const who = p => `${p.full || p.name}${partiesAt(p, y).length ? ` (${partiesAt(p, y).map(m => m.name).join(', ')})` : ''}`;
+  const parts = [];
+  if (leaders.length === 1) parts.push(`${who(leaders[0])} led ${name} throughout ${y}.`);
+  else if (leaders.length > 1) parts.push(`${name} had ${leaders.length} leaders in ${y}: ${leaders.map(who).join(', then ')}.`);
+  if (offices.length) parts.push(`Also in office: ${offices.map(o => `${who(o)} as ${o.office === 'hos' ? 'head of state' : 'head of government'}`).join('; ')}.`);
+  if (ruling.length === 1) parts.push(`The ${ruling[0].name} held power.`);
+  const count = t => events.filter(e => e.type === t).length;
+  const ev = [];
+  if (count('coup')) ev.push(`${count('coup')} irregular seizure${count('coup') > 1 ? 's' : ''} of power`);
+  if (count('election')) ev.push(`${count('election')} election${count('election') > 1 ? 's' : ''}`);
+  if (count('referendum')) ev.push(`${count('referendum')} referendum${count('referendum') > 1 ? 's' : ''}`);
+  if (count('statehood') || count('border')) ev.push('changes to its borders or status');
+  if (ev.length) parts.push(`The year saw ${ev.join(', ')}.`);
+  return parts.join(' ') || `No leadership data is recorded for ${name} in ${y}.`;
+}
+
+// The first few items of the "Events" section of Wikipedia's "<year> in <country>" article.
+const wikiCache = new Map();
+async function loadWikiEvents(page, gw, y) {
+  const box = $('#wiki-events');
+  try {
+    if (!wikiCache.has(page)) {
+      const url = 'https://en.wikipedia.org/w/api.php?' + new URLSearchParams({ action: 'query', prop: 'extracts', explaintext: '1', exsectionformat: 'wiki', redirects: '1', titles: page, format: 'json', origin: '*' });
+      const res = await fetch(url);
+      const pages = Object.values((await res.json()).query?.pages || {});
+      wikiCache.set(page, eventsFromExtract(pages[0]?.extract || ''));
+    }
+    if (state.selected !== gw || state.year !== y || !$('#wiki-events')) return;
+    const items = wikiCache.get(page);
+    box.innerHTML = items.length
+      ? `<ul class="wiki-list">${items.map(t => `<li>${esc(t)}</li>`).join('')}</ul><p class="note">From <a href="${wiki(page)}" target="_blank" rel="noopener">${esc(page)}</a>, Wikipedia (CC BY-SA)</p>`
+      : `<p class="note">More in <a href="${wiki(page)}" target="_blank" rel="noopener">${esc(page)}</a> on Wikipedia.</p>`;
+  } catch {
+    if ($('#wiki-events')) box.innerHTML = `<p class="note">More in <a href="${wiki(page)}" target="_blank" rel="noopener">${esc(page)}</a> on Wikipedia.</p>`;
+  }
+}
+function eventsFromExtract(text) {
+  const m = text.match(/\n== Events ==\n([\s\S]*?)(?=\n== (?!=)|$)/);
+  if (!m) return [];
+  return m[1].split('\n').map(l => l.trim())
+    .filter(l => l && !/^=+/.test(l) && l.length > 25)
+    .map(l => l.length > 220 ? l.slice(0, 217).replace(/\s+\S*$/, '') + '…' : l)
+    .slice(0, 6);
 }
 
 function eventItem(e, cname, gw) {

@@ -1,4 +1,4 @@
-// End-to-end tests for H&P Retrospective (installed Edge via playwright-core).
+// End-to-end tests for Political Retrospective (PRP, Retrospective Intelligence) (installed Edge via playwright-core).
 //   RETRO_URL=https://hp-retrospective.pages.dev node --test tests/e2e.test.mjs
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -22,7 +22,8 @@ after(async () => { await browser?.close(); });
 
 test('loads with data and no script errors', async () => {
   await open('');
-  assert.match(await page.textContent('#status'), /79 countries · 1926–present/);
+  assert.match(await page.textContent('#status'), /79 countries/);
+  assert.match(await page.textContent('#status'), /1926–present/);
   assert.equal(await page.textContent('#year-big'), String(new Date().getUTCFullYear()));
   assert.deepEqual(errors, []);
 });
@@ -111,10 +112,10 @@ test('year view lists events across countries and opens them', async () => {
   assert.ok(await page.locator('#close').count(), 'country panel opened');
 });
 
-test('JDP-I styling and phone layout', async () => {
+test('PRP styling and phone layout', async () => {
   await open('');
-  assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgb(16, 24, 32)');
-  assert.equal(await page.evaluate(() => document.documentElement.dataset.suite), 'hp');
+  assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgb(243, 244, 246)'); // PRP canvas, light theme
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.suite), 'rs');
   const m = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   await m.goto(`${BASE}/#y=1945&c=255`, { waitUntil: 'networkidle' });
   const { scroll, width } = await m.evaluate(() => ({ scroll: document.documentElement.scrollWidth, width: innerWidth }));

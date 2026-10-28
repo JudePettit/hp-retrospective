@@ -1,11 +1,13 @@
-/* H&P Retrospective — who led each country, and which political events happened, year by year.
-   Borders: CShapes 2.0. Leaders: Archigos 4.1 + Wikidata. Events: derived + Wikidata elections. */
+/* Political Retrospective (PRP · Retrospective Intelligence): who led each country, and which political events happened,
+   year by year. Borders: CShapes 2.0. Leaders: Archigos 4.1 + Wikidata. Events: derived + Wikidata elections.
+   Map colours are CSS custom properties over PRP tokens (styles.css), written into SVG fills as var(...), so the map
+   follows the light/dark theme without redrawing; the GIF export reads the same tokens when it draws. */
 import { GIFEncoder, quantize, applyPalette } from 'https://cdn.jsdelivr.net/npm/gifenc@1.0.3/dist/gifenc.esm.js';
 import { displayName } from './names.mjs';
 
 const W = 1000, H = 600;
 const TODAY = new Date().toISOString().slice(0, 10);
-const state = { year: 2026, selected: null, data: null, features: [], playing: null, animating: false };
+const state = { year: 2026, selected: null, data: null, features: [], playing: null, animating: false, view: 'map', sort: { key: 'name', dir: 1 } };
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const KIND = { leader: 'leader', coup: 'irregular', election: 'election', referendum: 'referendum', border: 'border', statehood: 'statehood' };
@@ -42,6 +44,7 @@ function statusFor(gw, y) {
   return 'steady';
 }
 const FILL = { irregular: 'var(--c-irregular)', change: 'var(--c-change)', border: 'var(--c-border)', steady: 'var(--c-steady)' };
+const STATUS_LABEL = { irregular: 'Irregular seizure of power', change: 'New leader', border: 'Border or status change', steady: 'No change' };
 const fmt = d => {
   if (!d) return 'present';
   const [y, m, dd] = d.split('-').map(Number);
@@ -56,6 +59,24 @@ function partiesAt(p, y) {
 const partyChips = (p, y) => partiesAt(p, y).map(m => `<a class="party" href="${esc(m.url)}" target="_blank" rel="noopener">${esc(m.name)}</a>`).join('');
 const wiki = (title) => `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`;
 const leaderLink = (l, gw) => l.url || `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(`${l.full || l.name} ${country(gw).name}`)}`;
+// Covered states active on a date, one per state, under the name they had then.
+function statesOn(date) {
+  const seen = new Map();
+  for (const f of activeOn(date)) {
+    const gw = f.properties.gw;
+    if (country(gw) && !seen.has(gw)) seen.set(gw, { gw, name: displayName(gw, f.properties.name, date) });
+  }
+  return [...seen.values()];
+}
+// Resolve a colour (a token, var() or color-mix()) to rgb() for drawing on a canvas.
+function cssColor(value) {
+  const probe = document.createElement('i');
+  probe.style.color = value;
+  document.body.appendChild(probe);
+  const rgb = getComputedStyle(probe).color;
+  probe.remove();
+  return rgb;
+}
 
 /* ---------------------------------------------------------------- map */
 function drawMap() {
@@ -80,7 +101,9 @@ function focusBounds([[x0, y0], [x1, y1]], duration = 700) {
 
 function renderMap(date = dateFor(state.year)) {
   const y = +date.slice(0, 4);
-  const shapes = activeOn(date);
+  // Covered states after the rest, so their outlines sit above their neighbours'; the selected state on top.
+  const rank = d => (country(d.properties.gw) ? (d.properties.gw === state.selected ? 2 : 1) : 0);
+  const shapes = activeOn(date).sort((a, b) => rank(a) - rank(b));
   const tip = $('#tooltip');
   g.selectAll('path.shape')
     .data(shapes, d => `${d.properties.gw}|${d.properties.s}`)
@@ -90,15 +113,19 @@ function renderMap(date = dateFor(state.year)) {
     .attr('data-gw', d => d.properties.gw)
     .attr('fill', d => FILL[statusFor(d.properties.gw, y)] || null)
     .on('mousemove', (ev, d) => {
-      const box = $('.map-wrap').getBoundingClientRect();
+      const box = $('.map-stage').getBoundingClientRect();
+      const covered = country(d.properties.gw);
       const l = leadersIn(d.properties.gw, y).at(-1);
-      tip.innerHTML = `<strong>${esc(displayName(d.properties.gw, d.properties.name, date))}</strong>${country(d.properties.gw) ? (l ? esc(l.full || l.name) : 'Leader unknown') : 'Not covered'}`;
+      const st = statusFor(d.properties.gw, y);
+      tip.innerHTML = `<strong>${esc(displayName(d.properties.gw, d.properties.name, date))}</strong>${covered ? (l ? esc(l.full || l.name) : 'Leader unknown') : 'Not covered'}` +
+        (covered ? `<span class="tip-sub"><span class="swatch" style="background:${FILL[st]}"></span>${STATUS_LABEL[st]} in ${y}</span>` : '');
       tip.hidden = false;
-      tip.style.left = `${Math.min(ev.clientX - box.left + 14, box.width - tip.offsetWidth - 8)}px`;
-      tip.style.top = `${ev.clientY - box.top + 14}px`;
+      tip.style.left = `${Math.max(8, Math.min(ev.clientX - box.left + 14, box.width - tip.offsetWidth - 8))}px`;
+      tip.style.top = `${Math.max(8, Math.min(ev.clientY - box.top + 14, box.height - tip.offsetHeight - 8))}px`;
     })
     .on('mouseleave', () => { tip.hidden = true; })
-    .on('click', (ev, d) => { if (country(d.properties.gw)) select(d.properties.gw); });
+    .on('click', (ev, d) => { if (country(d.properties.gw)) select(d.properties.gw); })
+    .order();
 }
 
 /* ---------------------------------------------------------------- panel */
@@ -109,10 +136,17 @@ function renderPanel() {
     const all = Object.entries(state.data.countries)
       .flatMap(([gw, c]) => eventsIn(gw, y).map(e => ({ ...e, gw, cname: c.name })))
       .sort((a, b) => a.date.localeCompare(b.date));
-    const changes = all.filter(e => e.type === 'leader' || e.type === 'coup').length;
+    const count = (...types) => all.filter(e => types.includes(e.type)).length;
+    const states = statesOn(dateFor(y)).length;
     panel.innerHTML = `<h2>${y}</h2>
-      <p class="sub">${changes} change${changes === 1 ? '' : 's'} of leader · ${all.filter(e => e.type === 'election' || e.type === 'referendum').length} elections and referendums</p>
-      <p class="note">Click a country to see who was in charge and its key events. Drag the slider or press ▶ to move through the years.</p>
+      <p class="sub">${states} covered states ${dateFor(y) === TODAY ? 'today' : `at the end of ${y}`}</p>
+      <div class="prp-kpis">
+        <div class="prp-kpi"><span>Leader changes</span><b>${count('leader', 'coup')}</b></div>
+        <div class="prp-kpi"><span>Irregular seizures</span><b>${count('coup')}</b></div>
+        <div class="prp-kpi"><span>Elections, referendums</span><b>${count('election', 'referendum')}</b></div>
+        <div class="prp-kpi"><span>Border or status changes</span><b>${count('border', 'statehood')}</b></div>
+      </div>
+      <p class="note">Select a country to see who was in charge and its key events. Drag the slider or press ▶ to move through the years.</p>
       <h3>Key events in ${y}</h3>
       ${all.length ? `<ul class="events">${all.slice(0, 120).map(e => eventItem(e, e.cname, e.gw)).join('')}</ul>` : '<p class="empty">No recorded events.</p>'}`;
     panel.querySelectorAll('[data-open]').forEach(a => a.onclick = ev => { ev.preventDefault(); select(+a.dataset.open); });
@@ -151,8 +185,8 @@ function renderPanel() {
     ${events.length ? `<ul class="events">${events.map(e => eventItem(e)).join('')}</ul>` : '<p class="empty">No recorded events this year.</p>'}
     ${changes.length ? `<h3>Border changes in ${y}</h3>
       <p class="sub">${changes.length} change${changes.length > 1 ? 's' : ''}: ${changes.map(fmt).join(', ')}</p>
-      <button class="btn" id="animate" type="button">▶ Play ${y} border changes</button>
-      <button class="btn" id="gif" type="button">⤓ Download GIF</button>` : ''}
+      <div class="actions"><button class="prp-btn sm primary" id="animate" type="button">▶ Play ${y} border changes</button>
+      <button class="prp-btn sm" id="gif" type="button">⤓ Download GIF</button></div>` : ''}
     ${page ? `<p class="note">More: <a href="${wiki(page)}" target="_blank" rel="noopener">${esc(page)}</a> on Wikipedia</p>` : ''}
     ${c.iso3 ? `<p class="note">Today: <a href="https://political-atlas.pages.dev/#${c.iso3}" target="_blank" rel="noopener">${esc(c.name)} in Political Atlas</a></p>` : ''}`;
   $('#close').onclick = () => select(null);
@@ -258,24 +292,35 @@ async function downloadGif(gw, y, changes) {
     const w = 720, h = 480;
     const frames = [`${y}-01-01`, ...changes];
     const shapes = countryShapes(gw, frames);
-    const proj = d3.geoMercator().fitExtent([[40, 50], [w - 40, h - 30]], { type: 'FeatureCollection', features: shapes });
+    const proj = d3.geoMercator().fitExtent([[40, 64], [w - 40, h - 40]], { type: 'FeatureCollection', features: shapes });
     const canvas = Object.assign(document.createElement('canvas'), { width: w, height: h });
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     const p = d3.geoPath(proj, ctx);
     const gif = GIFEncoder();
+    // Colours and type come from the PRP tokens at draw time, so the GIF matches the theme on screen.
+    const col = v => cssColor(`var(${v})`);
+    const C = {
+      water: col('--prp-map-water'), land: col('--c-none'), covered: col('--c-steady'), focus: col('--c-change'),
+      halo: col('--prp-map-halo'), border: col('--prp-map-border'), band: col('--prp-surface'), line: col('--prp-line'), text: col('--prp-text'), muted: col('--prp-muted')
+    };
     const css = getComputedStyle(document.documentElement);
-    const col = v => css.getPropertyValue(v).trim();
+    const serif = css.getPropertyValue('--prp-font-serif').trim() || 'serif';
+    const mono = css.getPropertyValue('--prp-font-mono').trim() || 'monospace';
     for (const d of frames) {
-      ctx.fillStyle = '#0d1721'; ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = C.water; ctx.fillRect(0, 0, w, h);
       for (const f of activeOn(d)) {
+        const covered = country(f.properties.gw);
         ctx.beginPath(); p(f);
-        ctx.fillStyle = f.properties.gw === gw ? col('--c-change') : country(f.properties.gw) ? '#2c4a52' : '#22323d';
-        ctx.fill(); ctx.strokeStyle = '#0d1721'; ctx.lineWidth = 1; ctx.stroke();
+        ctx.fillStyle = f.properties.gw === gw ? C.focus : covered ? C.covered : C.land;
+        ctx.fill(); ctx.strokeStyle = covered ? C.halo : C.border; ctx.lineWidth = 1; ctx.stroke();
       }
-      ctx.fillStyle = '#edf3f1'; ctx.font = '600 22px Manrope, sans-serif';
-      ctx.fillText(`${displayName(gw, country(gw).name, d)} · ${fmt(d)}`, 20, 34);
-      ctx.fillStyle = '#91a0aa'; ctx.font = '12px "DM Mono", monospace';
-      ctx.fillText('JDP-I H&P Retrospective · borders: CShapes 2.0', 20, h - 12);
+      // Title band and source line, set like a figure.
+      ctx.fillStyle = C.band; ctx.fillRect(0, 0, w, 48); ctx.fillRect(0, h - 28, w, 28);
+      ctx.fillStyle = C.line; ctx.fillRect(0, 48, w, 1); ctx.fillRect(0, h - 29, w, 1);
+      ctx.fillStyle = C.text; ctx.font = `600 22px ${serif}`;
+      ctx.fillText(`${displayName(gw, country(gw).name, d)} · ${fmt(d)}`, 20, 33);
+      ctx.fillStyle = C.muted; ctx.font = `12px ${mono}`;
+      ctx.fillText('Political Retrospective · PRP · borders: CShapes 2.0', 20, h - 10);
       const { data } = ctx.getImageData(0, 0, w, h);
       const palette = quantize(data, 64);
       gif.writeFrame(applyPalette(data, palette), w, h, { palette, delay: 1500 });
@@ -292,6 +337,97 @@ async function downloadGif(gw, y, changes) {
   }
 }
 
+/* ---------------------------------------------------------------- table view */
+const STATUS_ORDER = { irregular: 0, change: 1, border: 2, steady: 3 };
+const COLUMNS = [
+  ['name', 'State', r => r.name, ''],
+  ['leader', 'In charge', r => (r.leaders.at(-1)?.full || r.leaders.at(-1)?.name || null), ''],
+  ['status', 'This year', r => STATUS_ORDER[r.status], ''],
+  ['events', 'Events', r => r.events, 'num']
+];
+
+function renderTable() {
+  const y = state.year;
+  const table = $('#year-table');
+  const { key, dir } = state.sort;
+  const value = COLUMNS.find(col => col[0] === key)[2];
+  const cmp = (a, b) => (a === b ? 0 : a === null ? 1 : b === null ? -1 : typeof a === 'number' ? a - b : String(a).localeCompare(String(b)));
+  const rows = statesOn(dateFor(y))
+    .map(r => ({ ...r, leaders: leadersIn(r.gw, y), status: statusFor(r.gw, y), events: eventsIn(r.gw, y).length }))
+    .sort((a, b) => cmp(value(a), value(b)) * dir || a.name.localeCompare(b.name));
+  table.tHead.innerHTML = `<tr>${COLUMNS.map(([k, label, , cls]) => `<th scope="col"${cls ? ` class="${cls}"` : ''}${k === key ? ` aria-sort="${dir > 0 ? 'ascending' : 'descending'}"` : ''}>` +
+    `<button type="button" class="sort" data-sort="${k}">${label}<span class="arrow" aria-hidden="true">${k === key ? (dir > 0 ? '↑' : '↓') : '↕'}</span></button></th>`).join('')}</tr>`;
+  table.tBodies[0].innerHTML = rows.map(r => `<tr data-gw="${r.gw}"${r.gw === state.selected ? ' class="selected"' : ''}>
+      <td><button type="button" class="row-link">${esc(r.name)}</button></td>
+      <td>${r.leaders.length ? r.leaders.map(l => esc(l.full || l.name)).join(' → ') : '<span class="cell-sub">No leader recorded</span>'}</td>
+      <td><span class="cell-status"><span class="swatch" style="background:${FILL[r.status]}"></span>${STATUS_LABEL[r.status]}</span></td>
+      <td class="num">${r.events}</td></tr>`).join('');
+  $('#table-caption').textContent = `The ${rows.length} covered states ${dateFor(y) === TODAY ? 'today' : `at the end of ${y}`}: who was in charge during ${y}, what happened, and how many key events were recorded. Select a column heading to sort, or a row to open the state.`;
+}
+
+function markTableRow() {
+  const wrap = $('.table-wrap');
+  document.querySelectorAll('#year-table tbody tr').forEach(tr => {
+    const on = +tr.dataset.gw === state.selected;
+    tr.classList.toggle('selected', on);
+    // Bring the selected row into view (below the sticky header) if it is scrolled out of sight.
+    if (on && state.view === 'table') {
+      const r = tr.getBoundingClientRect(), w = wrap.getBoundingClientRect(), head = wrap.querySelector('thead').offsetHeight;
+      if (r.top < w.top + head || r.bottom > w.bottom) wrap.scrollTop += r.top - w.top - head - w.height / 3;
+    }
+  });
+}
+
+function setupTable() {
+  const table = $('#year-table');
+  table.tHead.onclick = ev => {
+    const b = ev.target.closest('[data-sort]');
+    if (!b) return;
+    const k = b.dataset.sort;
+    state.sort = { key: k, dir: state.sort.key === k ? -state.sort.dir : (k === 'events' ? -1 : 1) };
+    renderTable();
+    table.querySelector(`[data-sort="${k}"]`).focus();
+  };
+  table.tBodies[0].onclick = ev => { const tr = ev.target.closest('tr[data-gw]'); if (tr) select(+tr.dataset.gw); };
+}
+
+/* ---------------------------------------------------------------- views (tabs) */
+// Map and Table are tabs; ?view=table links straight to the table, and the #y=…&c=… hash still sets year and state.
+function setupTabs() {
+  const tabs = [...document.querySelectorAll('.prp-tabs [role="tab"]')];
+  const show = (view, focus = false) => {
+    state.view = view;
+    for (const t of tabs) {
+      const on = t.dataset.view === view;
+      t.setAttribute('aria-selected', String(on));
+      t.tabIndex = on ? 0 : -1;
+      document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+      if (on && focus) t.focus();
+    }
+    if (view === 'table') { renderTable(); markTableRow(); }
+    const params = new URLSearchParams(location.search);
+    if (view === 'map') params.delete('view'); else params.set('view', view);
+    const query = params.toString();
+    history.replaceState(null, '', `${location.pathname}${query ? `?${query}` : ''}${location.hash}`);
+  };
+  tabs.forEach((t, i) => {
+    t.onclick = () => show(t.dataset.view);
+    t.onkeydown = ev => {
+      const to = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[ev.key];
+      if (to === undefined) return;
+      ev.preventDefault();
+      show(tabs[(to + tabs.length) % tabs.length].dataset.view, true);
+    };
+  });
+  show(new URLSearchParams(location.search).get('view') === 'table' ? 'table' : 'map');
+}
+
+function renderCaption() {
+  const y = state.year;
+  $('#caption').textContent = `States and borders ${dateFor(y) === TODAY ? 'today' : `at the end of ${y}`}, each covered state coloured by what happened to it in ${y}. ` +
+    'Borders: CShapes 2.0; leaders: Archigos 4.1 and Wikidata.';
+}
+
 /* ---------------------------------------------------------------- year control */
 function setYear(y, { push = true } = {}) {
   state.year = Math.max(state.data.firstYear, Math.min(state.data.lastYear, y));
@@ -299,6 +435,8 @@ function setYear(y, { push = true } = {}) {
   $('#year-big').textContent = state.year;
   renderMap();
   renderPanel();
+  renderCaption();
+  if (state.view === 'table') renderTable();
   if (push) writeHash();
 }
 function stopPlay() {
@@ -327,6 +465,7 @@ function select(gw) {
   state.selected = gw;
   renderMap();
   renderPanel();
+  markTableRow();
   writeHash();
   if (gw) zoomToCountry(gw, [dateFor(state.year)]);
 }
@@ -387,12 +526,16 @@ function setupSearch() {
     ]);
     state.data = data;
     state.features = topojson.feature(topo, topo.objects.borders).features;
-    $('#status').textContent = `${Object.keys(data.countries).length} countries · ${data.firstYear}–present · borders, leaders and key events`;
+    $('#status').innerHTML = `<span>Coverage <b>${Object.keys(data.countries).length} countries</b></span><span>Years <b>${data.firstYear}–present</b></span>` +
+      '<span>Borders <b>CShapes 2.0</b></span><span>Leaders <b>Archigos 4.1, Wikidata</b></span><span>Events <b>Wikidata, Wikipedia</b></span>';
     drawMap();
     setupTimeline();
     setupSearch();
+    setupTable();
     const { y, c } = readHash();
     state.selected = c;
+    state.year = y;
+    setupTabs();
     setYear(y, { push: false });
     if (c) zoomToCountry(c, [dateFor(y)]);
     window.addEventListener('hashchange', () => {

@@ -136,4 +136,59 @@ events, for each year. (If 100 years proves too hard, start with a decade — bu
 - Map tiles: Carto now needs an API key, so Headlines and Battlefield were switched to Esri World Dark Gray.
 - H&P Retrospective: parties in power (Wikidata P102, by tenure) and a yearly overview (generated, plus the first events from Wikipedia's "YEAR in COUNTRY"). scripts/build-parties.mjs is chained into build-data.
 - Political Calendar: calendar/data/<decade>.json (3,511 events from 1980: Retrospective, UCDP, Wikidata, landmarks). Type filters, Month/Year views, month picker, country highlighting (?countries=).
-- Tests: jdpi 14/14 live; hp-retrospective 10/10 live.
+- Tests: jdpi 14/14 live; hp-retrospective 10/10 live.- ~04:30–05:35 UTC:
+  - Calendar split: Realtime Calendar (Q, contemporary) and Historical Calendar (H&P, 1980s–2020s). Plain-text summaries with See-more pop-outs; 3,452 of 3,511 events have a summary (calendar/scripts/enrich-summaries.mjs, cached).
+  - Retrospective: resolve-leaders.mjs fills in surname-only Archigos leaders (879 → 1,299 of 1,456 have a Wikipedia article).
+  - Learning: fe/learning.html renders plain-text .md courses.
+    - Finance (F&E): 25 lessons.
+    - Economics (F&E): Smith, Marx, Keynes, Mises, Friedman, Werner.
+    - Politics (H&P): far left to far right, with Mearsheimer and the Realists for the right.
+  - Double Signal trader (local folder, not in git):
+    - Live mode is locked behind live keys, DS_ALLOW_LIVE=yes, the phrase "I ACCEPT REAL-MONEY RISK" and DS_LIVE_MAX_POT; it uses state-live.json.
+    - Failsafes: ratchet, fast drop, broker backstop stop orders, 5 s polling near a level, halt detection, 10-day exit, daily loss limit.
+    - Tests: 12/12.
+  - Trader Tracker (F&E):
+    - House PTRs parsed from Clerk PDFs (11,263 trades, 143 members, parties from congress-legislators).
+    - 13F filings for 10 famous investors from EDGAR.
+    - Weekly Action traders-refresh.yml (verified on GitHub).
+    - Not covered: Senate (behind a terms page) and Cramer (no official record).
+  - Kardashev Tracker (H&P): kardashev/ (82 polities, 44 steps, after Ian Morris; K for 2025 = 0.732).
+  - Tests: jdpi 17/17 live.
+  - Review published: https://claude.ai/artifact/JJJ3HBWGYJGBZhUpT9rG3a
+- PENDING JUDE:
+  - Supabase ANTHROPIC_API_KEY (misnamed secret).
+  - Political Atlas GitHub secret before the 1 Nov monthly run.
+  - Double Signal app: decide where to publish it (ChatGPT Sites via Codex, or a port to Cloudflare).
+  - Lovable credits.- 26 Oct ~09:10 UTC: Double Signal PORTED to Cloudflare in C:\Users\judep\OneDrive\double-signal.
+  - Local git only: 2 commits. The GitHub push was blocked by the permission check and is pending Jude's OK.
+  - The original Codex folder is untouched.
+  - What changed:
+    - Cloudflare Access JWT verification in lib/access.mjs (owner only, fails closed).
+    - Cron every 10 minutes (lib/tick.ts, worker scheduled).
+    - Resend email in lib/delivery.ts.
+    - MCP, ChatGPT auth and connector code removed.
+  - Tests: 36/36. Production build verified locally.
+  - JDP-I: registry entry is in-build with opensInNewTab:true (the shell now supports new-tab modules).
+  - NEXT, after Jude runs `npx wrangler login`:
+    1. `wrangler d1 create double-signal`, put the id in deploy.config.json, run `npm run deploy`.
+    2. Jude enables Access on workers.dev and copies the AUD tag and team domain into deploy.config.json; redeploy.
+    3. Jude runs `wrangler secret put` for ALPACA_API_KEY, ALPACA_SECRET_KEY and RESEND_API_KEY.
+    4. Set the registry url and status to live.
+  - The Workers Paid plan may be needed for scan CPU time.- 26 Oct afternoon:
+  - Double Signal: live at double-signal.judep92.workers.dev behind Cloudflare Access (team empty-wood-f1d3, policy = Cloudflare account members).
+    - Registered live in JDP-I F&E; it opens in a new tab.
+    - Secrets still to add: Jude runs `wrangler secret put` for ALPACA_API_KEY, ALPACA_SECRET_KEY and RESEND_API_KEY.
+  - IMPORTANT: refresh bots commit to jdpi main. Always `git fetch && git rebase origin/main` before pushing, and check the push output. Several pushes were silently rejected earlier; fixed 26 Oct.
+  - Encyclopaedia (H&P), on the entity layer in lake/ (see lake/README.md):
+    - 7,056 entities and 5,602 tags.
+    - Boolean Explorer: Realist + "Structural realism" + American + "Political science" returns Mearsheimer, Waltz and Walt.
+    - The linker in jdpi-bar adds ◈ links on every module.
+    - The shell accepts #/suite/module?at= deep links.
+    - Monthly refresh: lake-refresh.yml.
+  - Calendar: shorter day cells. The Historical Calendar is one archive (period=history).
+  - Renamed: Country Headlines → Global Headline Tracker; Country PESTLE → National Analysis (q/national.html; data in national/, monthly national-refresh.yml).
+    - National Analysis keeps PESTLE's 22-indicator pressure scores and adds 19 metrics, a country overview and a 4-way comparison.
+  - QUEUED:
+    - Geopolitical Volatility: add country comparison and more metrics. It's on Lovable with a GDELT pipeline; rebuilding needs a decision.
+    - Briefing: balance sources equally across far left, left, centre, right and far right. It's on Lovable; needs credits or a rebuild.
+    - Headline translation: blocked on the Supabase ANTHROPIC_API_KEY secret.

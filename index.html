@@ -19,7 +19,7 @@
   <header class="page-head">
     <p class="prp-eyebrow" data-jdpi-standalone><span>Retrospective Intelligence <span class="sep">·</span> Political Retrospective</span></p>
     <h1 class="prp-title">Political Retrospective</h1>
-    <p class="prp-dek">Who led each country and what happened politically, year by year from 1926 to today, on the borders of the time. Move the slider, or select a country for its leaders, parties and events.</p>
+    <p class="prp-dek">Who led each country and what happened politically, year by year from 1926 to today, on the borders of the time. Move through the years, or set a period with the timeline’s two handles, then select a country for its leaders, parties and events.</p>
     <p class="prp-meta" id="status">Loading historical data…</p>
   </header>
 
@@ -33,15 +33,11 @@
       <input id="search" class="prp-input" type="search" placeholder="Search a country or leader…" autocomplete="off" aria-label="Search countries and leaders">
       <ul id="search-results" class="search-results" role="listbox" hidden></ul>
     </div>
-    <div class="timeline" role="group" aria-label="Year selector">
-      <button type="button" id="prev" class="tl-btn" aria-label="Previous year">‹</button>
-      <button type="button" id="play" class="tl-btn play" aria-label="Play through the years">▶</button>
-      <button type="button" id="next" class="tl-btn" aria-label="Next year">›</button>
-      <div class="slider-wrap">
-        <input type="range" id="year" min="1926" max="2026" step="1" value="2026" aria-label="Year">
-        <div class="ticks" id="ticks" aria-hidden="true"></div>
-      </div>
-      <div class="year-badge" aria-live="polite"><span class="prp-label">Year</span><b id="year-big">2026</b></div>
+    <!-- The years shown (prp-period.js): ‹ ▶ › and two handles on one track. The start (hollow; #from) rests on the end
+         (filled; #year), so one year is shown; drag the start back for a period of years. -->
+    <div class="timeline">
+      <div id="period" role="group" aria-label="Year or period"></div>
+      <div class="year-badge" aria-live="polite"><span class="prp-label" id="year-label">Year</span><b id="year-big">2026</b></div>
     </div>
   </div>
 
@@ -60,7 +56,7 @@
             <div id="anim-label" class="anim-label" hidden></div>
           </div>
           <div class="legend">
-            <h4>This year</h4>
+            <h4 id="legend-title">This year</h4>
             <ul>
               <li><span class="swatch" style="background:var(--c-change)"></span>New leader</li>
               <li><span class="swatch" style="background:var(--c-irregular)"></span>Irregular seizure of power</li>
@@ -90,13 +86,14 @@
 
   <footer class="prp-sources">
     <p><b>Sources.</b> Borders: <a href="https://icr.ethz.ch/data/cshapes/">CShapes 2.0</a> (ETH Zürich), dated state borders to 2019, with borders unchanged since then treated as current; CC BY-NC-SA 4.0, non-commercial use only. Leaders to 2015 and how they entered and left office: <a href="https://www.rochester.edu/college/faculty/hgoemans/data.htm">Archigos 4.1</a> (Goemans, Gleditsch &amp; Chiozza 2009). Leaders after 2015, heads of state and government, parties in power, national elections and referendums: <a href="https://www.wikidata.org">Wikidata</a> (CC0). Year pages and event lists: Wikipedia (CC BY-SA).</p>
-    <p><b>Method.</b> Each state is coloured by the most significant thing that happened to it that year: an irregular seizure of power (a coup or other irregular entry in Archigos), otherwise a new leader, otherwise a change of borders or status. Borders are drawn as they stood at the end of the year, or today for the current year. Colonies and mandates were not independent states, so they appear uncoloured.</p>
+    <p><b>Method.</b> Each state is coloured by the most significant thing that happened to it that year: an irregular seizure of power (a coup or other irregular entry in Archigos), otherwise a new leader, otherwise a change of borders or status. Borders are drawn as they stood at the end of the year, or today for the current year. Over a period of years, each state takes the most significant thing that happened in any of them, on the borders at the end of the period, and the panels list every leader, party and event of the period. Colonies and mandates were not independent states, so they appear uncoloured.</p>
     <p><b>Limits.</b> Archigos names some leaders by surname only; where Wikidata has no match, the leader links to a Wikipedia search. After 2015 each country follows the office Archigos tracked, so a strong leader in the other office appears under “Also in office”. Election coverage depends on Wikidata.</p>
   </footer>
 </div>
 
   <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
+  <script src="prp-period.js"></script>
   <script type="module" src="app.js"></script>
 </body>
 </html>

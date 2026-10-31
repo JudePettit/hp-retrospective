@@ -35,20 +35,93 @@ body { margin: 0; }
 .search-results li small { display: block; color: var(--prp-muted); font-size: var(--prp-fs-xs); }
 .search-results li:hover, .search-results li[aria-selected="true"] { background: var(--prp-surface-3); }
 
+/* The years shown: prp-period.js draws ‹ ▶ › and two handles on one track, styled by the "Period control" section
+   (copied below from jdpi's design/prp.css); the badge beside it names the year or the period. The badge keeps the
+   width of its widest text ("Period 1926–2026", 187px in the PRP fonts) at rest too: were it to grow as the start
+   handle opened a period, the track would shrink under the pointer mid-drag and the handles would jump (the end too).
+   On narrow screens it sits on its own line above the track instead, where its width moves nothing. */
 .timeline { flex: 1 1 520px; display: flex; align-items: center; gap: 6px; min-width: 0; }
-.tl-btn {
-  flex: none; width: 32px; height: 32px; padding: 0; border: 1px solid var(--prp-line-strong); border-radius: var(--prp-radius-sm); cursor: pointer;
-  background: var(--prp-surface); color: var(--prp-text); font: 16px/1 var(--prp-font-ui);
-}
-.tl-btn:hover { background: var(--prp-surface-3); }
-.tl-btn.play { background: var(--prp-primary); border-color: var(--prp-primary); color: var(--prp-on-primary); font-size: 13px; }
-.tl-btn.play:hover { background: var(--prp-primary-hover); border-color: var(--prp-primary-hover); }
-.slider-wrap { flex: 1; min-width: 0; position: relative; margin: 0 6px; padding-top: 2px; padding-bottom: 16px; }
-#year { display: block; width: 100%; margin: 0; accent-color: var(--prp-accent); }
-.ticks { position: absolute; left: 0; right: 0; bottom: 0; height: 14px; color: var(--prp-muted); font: 10px var(--prp-font-mono); font-variant-numeric: tabular-nums; }
-.ticks span { position: absolute; transform: translateX(-50%); }
-.year-badge { flex: none; display: flex; align-items: baseline; gap: 8px; margin-left: 6px; }
+#period { flex: 1 1 auto; }
+.year-badge { flex: none; display: flex; align-items: baseline; justify-content: flex-end; gap: 8px; margin-left: 6px; min-width: 196px; }
 .year-badge b { color: var(--prp-text); font: 600 30px/1 var(--prp-font-serif); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+
+/* A copy of the "Period control" section of jdpi's design/prp.css (https://jdpi.pages.dev/design/prp.css), the look of
+   prp-period.js: keep the two in step (tests/e2e.test.mjs checks that they match). It is here as well as in the
+   stylesheet index.html loads from jdpi so that the control is whole whichever of the two sites is deployed first;
+   where jdpi already serves it, the rules are the same twice. From the next line to the end of the copy, as it is: */
+/* --- Period control (design/prp-period.js) -----------------------------------
+   A time slider with two handles, the start of the period (hollow) and its end (filled): two range inputs stacked on
+   one drawn track with the period filled between them, ‹ ▶ › before it, an optional strip above and labelled ticks
+   below. The inputs take no pointer events, only their thumbs, so either handle can be dragged where the other isn't;
+   --prp-period-inset is half a thumb, where a native thumb's centre travels, so the track, the fill, the strip and the
+   ticks line up with the handles. Where the handles meet on a snapshot page (data-rest="end": one time shown, the start
+   resting on the end) the start in front wears a ring round the filled end, so both can be seen, and the end's focus
+   ring is drawn outside that ring (it would sit under it, unseen). Colours: the module accent, or system colours in
+   forced-colours mode; a page sets --prp-period-strip for a taller strip of its own (War Focus's deaths). */
+.prp-period { --prp-period-thumb: 16px; --prp-period-inset: calc(var(--prp-period-thumb) / 2); --prp-period-strip: 16px;
+  display: flex; align-items: center; gap: 6px; flex: 1 1 520px; min-width: 0; }
+.prp-period-btn { flex: none; display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0; cursor: pointer;
+  border: 1px solid var(--prp-line-strong); border-radius: var(--prp-radius-sm); background: var(--prp-surface); color: var(--prp-text); font: 16px/1 var(--prp-font-ui); }
+.prp-period-btn:hover { background: var(--prp-surface-3); }
+.prp-period-btn.play { width: 36px; height: 36px; border-radius: 50%; border-color: var(--prp-primary); background: var(--prp-primary); color: var(--prp-on-primary); font-size: 12px; }
+.prp-period-btn.play:hover { border-color: var(--prp-primary-hover); background: var(--prp-primary-hover); }
+.prp-period-btn:focus-visible { outline: 2px solid var(--prp-focus); outline-offset: 1px; }
+.prp-period-slider { position: relative; flex: 1; min-width: 0; margin-left: 6px; padding: 4px 0 16px; }
+.prp-period-slider.has-strip { padding-top: var(--prp-period-strip); }
+.prp-period-slider:not(.has-strip) > .prp-period-strip { display: none; }
+.prp-period-strip { position: absolute; left: var(--prp-period-inset); right: var(--prp-period-inset); top: 0; width: calc(100% - 2 * var(--prp-period-inset)); height: var(--prp-period-strip); overflow: visible; }
+.prp-period-strip rect.in { fill: var(--prp-accent); opacity: .75; }
+.prp-period-strip rect.out { fill: var(--prp-line-strong); }
+.prp-period-range { position: relative; height: calc(var(--prp-period-thumb) + 4px); margin: 2px 0 0; }
+.prp-period-track { position: absolute; left: var(--prp-period-inset); right: var(--prp-period-inset); top: calc(50% - 2px); height: 4px; border-radius: 2px; background: var(--prp-line-strong); cursor: pointer; }
+.prp-period-fill { position: absolute; top: 0; bottom: 0; border-radius: 2px; background: var(--prp-accent); }
+.prp-period-range input[type="range"] { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; margin: 0; padding: 0; background: transparent; appearance: none; -webkit-appearance: none; pointer-events: none; }
+.prp-period-range input.to { z-index: 2; }
+.prp-period-range.top-from input.from { z-index: 3; }
+.prp-period-range input[type="range"]::-webkit-slider-runnable-track { height: 100%; background: transparent; }
+.prp-period-range input[type="range"]::-moz-range-track { height: 100%; background: transparent; }
+.prp-period-range input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; pointer-events: auto; width: var(--prp-period-thumb); height: var(--prp-period-thumb); margin-top: 2px;
+  border: 2px solid var(--prp-accent); border-radius: 50%; background: var(--prp-accent); box-shadow: 0 0 0 1px var(--prp-surface); cursor: grab; }
+.prp-period-range input[type="range"]::-moz-range-thumb { pointer-events: auto; width: calc(var(--prp-period-thumb) - 4px); height: calc(var(--prp-period-thumb) - 4px);
+  border: 2px solid var(--prp-accent); border-radius: 50%; background: var(--prp-accent); box-shadow: 0 0 0 1px var(--prp-surface); cursor: grab; }
+.prp-period-range input.from::-webkit-slider-thumb { background: var(--prp-surface); }
+.prp-period-range input.from::-moz-range-thumb { background: var(--prp-surface); }
+.prp-period[data-rest="end"] .prp-period-range.joined input.from::-webkit-slider-thumb { background: transparent; box-shadow: 0 0 0 2px var(--prp-surface), 0 0 0 4px var(--prp-accent); }
+.prp-period[data-rest="end"] .prp-period-range.joined input.from::-moz-range-thumb { background: transparent; box-shadow: 0 0 0 2px var(--prp-surface), 0 0 0 4px var(--prp-accent); }
+.prp-period-range input[type="range"]:active::-webkit-slider-thumb { cursor: grabbing; }
+.prp-period-range input[type="range"]:focus-visible { outline: none; }
+.prp-period-range input[type="range"]:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--prp-focus); outline-offset: 2px; }
+.prp-period-range input[type="range"]:focus-visible::-moz-range-thumb { outline: 2px solid var(--prp-focus); outline-offset: 2px; }
+/* The start's ring reaches 4px beyond the joined handles, where the end's focus ring would be: the end's goes outside. */
+.prp-period[data-rest="end"] .prp-period-range.joined input.to:focus-visible::-webkit-slider-thumb { outline-offset: 5px; }
+.prp-period[data-rest="end"] .prp-period-range.joined input.to:focus-visible::-moz-range-thumb { outline-offset: 5px; }
+.prp-period-ticks { position: absolute; left: var(--prp-period-inset); right: var(--prp-period-inset); bottom: 0; height: 14px; color: var(--prp-muted); font: 10.5px/14px var(--prp-font-mono); font-variant-numeric: tabular-nums; }
+.prp-period-ticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.prp-period-ticks span.start { transform: translateX(calc(-1 * var(--prp-period-inset))); }
+.prp-period-ticks span.end { transform: translateX(calc(var(--prp-period-inset) - 100%)); }
+@media (pointer: coarse) { .prp-period { --prp-period-thumb: 22px; } } /* a larger handle to touch */
+@media (max-width: 900px) { .prp-period { flex: 1 1 100%; } .prp-period-ticks span.minor { display: none; } }
+@media (max-width: 480px) { .prp-period-ticks span:not(.start, .end, .key) { display: none; } }
+/* Forced colours (Windows high contrast) drop the track's and the period's backgrounds and draw both handles as the
+   same hollow circle, so neither the period nor which end is which could be seen: the track, the period, the strip and
+   the handles take system colours instead (the end filled, the start hollow, the ring where they meet). */
+@media (forced-colors: active) {
+  .prp-period-track { background: GrayText; forced-color-adjust: none; }
+  .prp-period-fill { background: Highlight; forced-color-adjust: none; }
+  .prp-period-strip { forced-color-adjust: none; }
+  .prp-period-strip rect.in { fill: Highlight; opacity: 1; }
+  .prp-period-strip rect.out { fill: GrayText; }
+  .prp-period-range input[type="range"] { forced-color-adjust: none; }
+  .prp-period-range input[type="range"]::-webkit-slider-thumb { border-color: ButtonText; background: ButtonText; box-shadow: 0 0 0 1px Canvas; }
+  .prp-period-range input[type="range"]::-moz-range-thumb { border-color: ButtonText; background: ButtonText; box-shadow: 0 0 0 1px Canvas; }
+  .prp-period-range input.from::-webkit-slider-thumb { background: Canvas; }
+  .prp-period-range input.from::-moz-range-thumb { background: Canvas; }
+  .prp-period[data-rest="end"] .prp-period-range.joined input.from::-webkit-slider-thumb { background: transparent; box-shadow: 0 0 0 2px Canvas, 0 0 0 4px ButtonText; }
+  .prp-period[data-rest="end"] .prp-period-range.joined input.from::-moz-range-thumb { background: transparent; box-shadow: 0 0 0 2px Canvas, 0 0 0 4px ButtonText; }
+  .prp-period-range input[type="range"]:focus-visible::-webkit-slider-thumb { outline-color: Highlight; }
+  .prp-period-range input[type="range"]:focus-visible::-moz-range-thumb { outline-color: Highlight; }
+}
+/* End of the copy of design/prp.css's "Period control" section. */
 
 /* Map and table on the left, the year or country panel on the right */
 .layout { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 16px; align-items: start; }
@@ -154,12 +227,11 @@ body { margin: 0; }
   .prp-title { font-size: 26px; }
   .search-wrap { flex: 1 1 100%; }
   .timeline { flex: 1 1 100%; flex-wrap: wrap; row-gap: 8px; }
-  .year-badge { order: -1; margin: 0 auto 0 0; }
-  .slider-wrap { order: 5; flex: 1 1 100%; margin: 0; }
+  .year-badge { order: -1; margin: 0 auto 0 0; min-width: 0; justify-content: flex-start; }
+  #period { order: 5; flex: 1 1 100%; }
   .layout { grid-template-columns: minmax(0, 1fr); }
   .map-wrap { height: clamp(360px, 58vh, 540px); }
   .table-wrap { height: auto; max-height: 70vh; }
   .panel { height: auto; overflow: visible; padding: 16px; }
   .legend { padding: 8px 12px; }
-  .ticks span:nth-child(even) { display: none; }
 }

@@ -1,10 +1,13 @@
 // End-to-end tests for Political Retrospective (PRP, Retrospective Intelligence) (installed Edge via playwright-core).
 //   RETRO_URL=https://hp-retrospective.pages.dev node --test tests/e2e.test.mjs
+// JDPI_URL (by default https://jdpi.pages.dev) is the jdpi site whose period control this page's copy must match.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { chromium } from 'playwright-core';
 
 const BASE = (process.env.RETRO_URL || 'http://localhost:8095').replace(/\/$/, '');
+const JDPI = (process.env.JDPI_URL || 'https://jdpi.pages.dev').replace(/\/$/, '');
 let browser, page;
 const errors = [];
 
@@ -41,6 +44,69 @@ test('the slider redraws borders and the year summary', async () => {
   await page.locator('#year').dispatchEvent('input');
   assert.notEqual(await page.locator('path.shape').count(), before1950);
   assert.match(page.url(), /#y=1995/);
+});
+
+test('a period of years: the panels and the address follow it; the handles close it onto one year and open it again', async () => {
+  await open('#y=1945&f=1938&c=255');
+  assert.equal(await page.textContent('#year-big'), '1938–1945');
+  assert.equal(await page.textContent('#year-label'), 'Period');
+  assert.equal(await page.textContent('#legend-title'), 'In the period');
+  assert.match(await page.textContent('.overview'), /2 leaders between 1938 and 1945/);
+  assert.match(await page.textContent('#panel'), /In charge during 1938–1945/);
+  assert.match(await page.textContent('#animate'), /1938–1945 border changes/);
+  // The end handle pulled back onto the start: one year again, and no f in the address.
+  await page.locator('#year').fill('1938');
+  await page.locator('#year').dispatchEvent('input');
+  assert.equal(await page.textContent('#year-big'), '1938');
+  assert.match(page.url(), /#y=1938&c=255$/);
+  // The start handle pulled back from one year opens a period.
+  await page.locator('#from').fill('1930');
+  await page.locator('#from').dispatchEvent('input');
+  assert.equal(await page.textContent('#year-big'), '1930–1938');
+  assert.match(page.url(), /#y=1938&f=1930&c=255$/);
+});
+
+// A real pointer, as a reader drags: fill() above cannot see a layout that changes under the pointer mid-drag. The badge
+// beside the track once grew as the period opened ("Year 1990" to "Period 1989–1990"), so the track shrank under the
+// pointer, the start handle jumped back and forth, and the end year moved with it.
+test('dragging the start handle with the pointer opens a period and leaves the end year where it was', async () => {
+  await open('#y=1990');
+  await page.waitForSelector('.jdpi-returnbar', { timeout: 15000 }); // prp-bar.js adds it after load, moving the page down
+  await page.evaluate(() => document.fonts.ready);
+  // The start handle's thumb, resting on the end: a thumb's centre runs from half a thumb in from each end of its input.
+  const at = await page.locator('#from').evaluate(e => {
+    const r = e.getBoundingClientRect(), t = parseFloat(getComputedStyle(e.closest('.prp-period')).getPropertyValue('--prp-period-thumb')) || 16;
+    return { x: r.left + t / 2 + ((+e.value - +e.min) / Math.max(1, +e.max - +e.min)) * (r.width - t), y: r.top + r.height / 2 };
+  });
+  const starts = [], ends = [];
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  for (let k = 1; k <= 10; k++) { // 60px back, 6px at a time
+    await page.mouse.move(at.x - 6 * k, at.y);
+    starts.push(+(await page.locator('#from').getAttribute('data-value')));
+    ends.push(await page.locator('#year').getAttribute('data-value'));
+  }
+  await page.mouse.up();
+  assert.deepEqual([...new Set(ends)], ['1990'], `the end handle stays on 1990: ${ends.join(' ')}`);
+  assert.ok(starts.every((y, k) => y <= (k ? starts[k - 1] : 1990)), `the start only moves back: ${starts.join(' ')}`);
+  assert.ok(starts.at(-1) < 1990, `a period opened: ${starts.at(-1)}`);
+  assert.equal(await page.textContent('#year-big'), `${starts.at(-1)}–1990`);
+  assert.match(page.url(), new RegExp(`#y=1990&f=${starts.at(-1)}$`));
+});
+
+// The period control is a copy of jdpi's: prp-period.js, less its two-line header, and in styles.css the "Period control"
+// section of design/prp.css must be jdpi's as served at JDPI_URL. Until jdpi serves the control there is nothing to
+// compare them with, and the test says so (Pages answers a missing file with its home page, so the script is known by
+// what it says, not by its status).
+test('the period control matches jdpi\'s: the script and its stylesheet section', async t => {
+  const fetchText = async path => { const r = await fetch(`${JDPI}/${path}`); return r.ok ? (await r.text()).replace(/\r\n/g, '\n') : ''; };
+  const [js, css] = await Promise.all([fetchText('design/prp-period.js'), fetchText('design/prp.css')]);
+  const from = css.indexOf('/* --- Period control'), next = css.indexOf('\n/* --- ', from + 1);
+  const section = from < 0 ? '' : css.slice(from, next < 0 ? undefined : next).trim();
+  if (!js.includes('root.PRPPeriod =') || !section) return t.skip(`${JDPI} does not serve the period control yet`);
+  const own = file => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+  assert.equal(own('prp-period.js').split('\n').slice(2).join('\n'), js, 'prp-period.js is jdpi\'s design/prp-period.js');
+  assert.ok(own('styles.css').includes(section), 'styles.css carries design/prp.css\'s "Period control" section as it is');
 });
 
 test('Germany 1938: leader, events, border changes, links', async () => {

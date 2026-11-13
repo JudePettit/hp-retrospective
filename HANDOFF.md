@@ -89,7 +89,7 @@ events, for each year. (If 100 years proves too hard, start with a decade — bu
 3. Register in C:\Users\judep\OneDrive\jdpi\registry.json under suite "hp" (id "retrospective"), push jdpi.
 4. Publish: `gh repo create hp-retrospective --public --source . --push` (gh at C:\Program Files\GitHub CLI\gh.exe,
    logged in as JudePettit; set git user.name JudePettit and noreply email). Deploy on Cloudflare Pages
-   (account judep92@gmail.com, signed in in the Claude built-in browser): the Cloudflare GitHub app is limited to
+   (in the user's own Cloudflare account, signed in in the Claude built-in browser): the Cloudflare GitHub app is limited to
    selected repos at https://github.com/settings/installations/175213131 — add hp-retrospective there, then
    Workers & Pages → Create → Pages → Import Git repo → hp-retrospective, no build command, output "/".
 5. Then the user wants automated tests (Playwright) written and run against every JDP-I module:

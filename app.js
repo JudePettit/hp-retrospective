@@ -77,6 +77,39 @@ function statesOn(date) {
   }
   return [...seen.values()];
 }
+// Why a year's count is smaller than the coverage in the status line, worked out per country from the borders data
+// (CShapes 2.0). A covered country is counted in a year only while it has a border that year. Some have no border in
+// CShapes at all (the smallest states: Monaco, San Marino, six Caribbean islands…), so the map never draws them and no
+// year counts them, though they are covered for their leaders and events. The rest have borders only while they were
+// independent: before (not yet), after (no longer), or between two spells of independence (the Baltic states, 1940–91).
+function coverageNote(y) {
+  const date = dateFor(y), now = date === TODAY, when = now ? 'today' : `at the end of ${y}`;
+  const all = Object.keys(state.data.countries).map(Number), total = all.length;
+  const counted = new Set(statesOn(date).map(s => s.gw));
+  const later = [], earlier = [], between = [], noBorder = [];
+  for (const gw of all) {
+    if (counted.has(gw)) continue;
+    const fs = state.features.filter(f => f.properties.gw === gw).map(f => f.properties);
+    if (!fs.length) noBorder.push(country(gw).name);
+    else if (fs.every(p => p.s > date)) later.push(gw);
+    else if (fs.every(p => p.e < date)) earlier.push(gw);
+    else between.push(gw);
+  }
+  const n = counted.size, m = later.length + earlier.length + between.length, k = noBorder.length;
+  if (n === total) return `All ${total} countries covered over the years are on the map ${when}.`;
+  const names = l => (l.length < 2 ? l.join('') : `${l.slice(0, -1).join(', ')} and ${l.at(-1)}`);
+  let out = `${n} of the ${total} countries covered over the years are on the map ${when}.`;
+  if (k) out += ` ${k === 1 ? 'One has' : `${k} have`} no border in CShapes 2.0, so the map does not draw ${k === 1 ? 'it' : 'them'} in any year: ${names(noBorder)}.`;
+  if (m) {
+    const verb = now ? (m === 1 ? 'is' : 'are') : (m === 1 ? 'was' : 'were'), what = m === 1 ? 'an independent state' : 'independent states';
+    const kinds = [[later, 'not yet'], [earlier, 'no longer'], [between, 'between two spells of independence']].filter(([l]) => l.length);
+    const head = `The other ${m === 1 ? 'one' : m} ${verb}`, then = now ? '' : ' then';
+    out += kinds.length > 1 ? ` ${head} not ${what}${then}: ${names(kinds.map(([l, w]) => `${l.length} ${w}`))}.`
+      : kinds[0][1] === 'between two spells of independence' ? ` ${head} not ${what}${then}, between two spells of independence.`
+        : ` ${head} ${kinds[0][1]} ${what}${then}.`;
+  }
+  return out;
+}
 // Resolve a colour (a token, var() or color-mix()) to rgb() for drawing on a canvas.
 function cssColor(value) {
   const probe = document.createElement('i');
@@ -148,9 +181,8 @@ function renderPanel() {
       .flatMap(([gw, c]) => eventsIn(gw, a, y).map(e => ({ ...e, gw, cname: c.name })))
       .sort((p, q) => p.date.localeCompare(q.date));
     const count = (...types) => all.filter(e => types.includes(e.type)).length;
-    const states = statesOn(dateFor(y)).length;
     panel.innerHTML = `<h2>${when}</h2>
-      <p class="sub">${states} covered states ${dateFor(y) === TODAY ? 'today' : `at the end of ${y}`}</p>
+      <p class="sub">${esc(coverageNote(y))}</p>
       <div class="prp-kpis">
         <div class="prp-kpi"><span>Leader changes</span><b>${count('leader', 'coup')}</b></div>
         <div class="prp-kpi"><span>Irregular seizures</span><b>${count('coup')}</b></div>
@@ -375,7 +407,7 @@ function renderTable() {
       <td>${r.leaders.length ? r.leaders.map(l => esc(l.full || l.name)).join(' → ') : '<span class="cell-sub">No leader recorded</span>'}</td>
       <td><span class="cell-status"><span class="swatch" style="background:${FILL[r.status]}"></span>${STATUS_LABEL[r.status]}</span></td>
       <td class="num">${r.events}</td></tr>`).join('');
-  $('#table-caption').textContent = `The ${rows.length} covered states ${dateFor(y) === TODAY ? 'today' : `at the end of ${y}`}: who was in charge during ${span(a, y)}, what happened, and how many key events were recorded. Select a column heading to sort, or a row to open the state.`;
+  $('#table-caption').textContent = `${coverageNote(y)} For each of the ${rows.length} on the map: who was in charge during ${span(a, y)}, what happened, and how many key events were recorded. Select a column heading to sort, or a row to open the state.`;
 }
 
 function markTableRow() {
@@ -542,7 +574,7 @@ function setupSearch() {
     ]);
     state.data = data;
     state.features = topojson.feature(topo, topo.objects.borders).features;
-    $('#status').innerHTML = `<span>Coverage <b>${Object.keys(data.countries).length} countries</b></span><span>Years <b>${data.firstYear}–present</b></span>` +
+    $('#status').innerHTML = `<span>Coverage <b>${Object.keys(data.countries).length} countries</b> over all the years</span><span>Years <b>${data.firstYear}–present</b></span>` +
       '<span>Borders <b>CShapes 2.0</b></span><span>Leaders <b>Archigos 4.1, Wikidata</b></span><span>Events <b>Wikidata, Wikipedia</b></span>';
     drawMap();
     setupTimeline();

@@ -31,6 +31,43 @@ test('loads with data and no script errors', async () => {
   assert.deepEqual(errors, []);
 });
 
+// Review of 12 November 2026: the status line's coverage (every country over all the years) and a year's count of
+// covered states differed with no word why. Beside the year's count the panel and the table now say how many of the
+// whole coverage existed as states that year and why the rest are missing, worked out from the data.
+test('a year\'s count of states says how it differs from the coverage over all the years', async () => {
+  await open('#y=1950');
+  const data = JSON.parse(readFileSync(new URL('../data/countries.json', import.meta.url), 'utf8'));
+  const total = Object.keys(data.countries).length;
+  // The reason is worked out per country: a country with no border in CShapes at all (Monaco, San Marino, six Caribbean
+  // islands) is never described as "not independent" (the second reader of 14 November 2026 found it was).
+  const topo = JSON.parse(readFileSync(new URL('../data/borders.topo.json', import.meta.url), 'utf8'));
+  const drawn = new Set(topo.objects.borders.geometries.map(g => g.properties.gw));
+  const noBorder = Object.entries(data.countries).filter(([gw]) => !drawn.has(+gw)).map(([, c]) => c.name);
+  assert.ok(noBorder.length > 1, 'some covered countries have no border in CShapes');
+  const sub = await page.textContent('#panel .sub');
+  const head = sub.match(/^(\d+) of the (\d+) countries covered over the years are on the map at the end of 1950\./);
+  const nb = sub.match(/ (\d+) have no border in CShapes 2\.0, so the map does not draw them in any year: ([^.]+)\./);
+  const other = sub.match(/ The other (\d+) were not independent states then: (.+)\.$/);
+  assert.ok(head && nb && other, sub);
+  assert.equal(+head[2], total);
+  assert.equal(+nb[1], noBorder.length);
+  for (const name of noBorder) {
+    assert.ok(nb[2].includes(name), `${name} is named among the countries with no border`);
+    assert.ok(!other[0].includes(name), `${name} is not called "not independent"`);
+  }
+  assert.equal(+head[1] + +nb[1] + +other[1], total, sub);
+  // "14 not yet, 1 no longer and 3 between two spells of independence" in 1950: the kinds add up to the other count.
+  assert.equal([...other[2].matchAll(/(\d+) (not yet|no longer|between two spells of independence)/g)].reduce((s, x) => s + +x[1], 0), +other[1], other[2]);
+  assert.match(other[2], /between two spells of independence/, 'the Baltic states in 1950');
+  assert.match(await page.textContent('#status'), new RegExp(`${total} countries over all the years`));
+  await page.click('#tab-table');
+  await page.waitForSelector('#year-table tbody tr');
+  assert.match(await page.textContent('#table-caption'), new RegExp(`^${head[1]} of the ${total} countries covered over the years`));
+  assert.match(await page.textContent('#table-caption'), new RegExp(`For each of the ${head[1]} on the map:`));
+  assert.equal(await page.locator('#year-table tbody tr').count(), +head[1], 'the table lists exactly the states the note counts');
+  await page.click('#tab-map');
+});
+
 test('the slider redraws borders and the year summary', async () => {
   await open('#y=1950');
   const before1950 = await page.locator('path.shape').count();

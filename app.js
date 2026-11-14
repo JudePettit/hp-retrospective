@@ -134,8 +134,17 @@ function drawMap() {
   focusBounds([[-170, 5], [150, 72]], 0);
 }
 
-function focusBounds([[x0, y0], [x1, y1]], duration = 700) {
-  const [[px0, py0], [px1, py1]] = [projection([x0, y1]), projection([x1, y0])];
+// `edges`: bound the box by points along its four edges, not by two corners. The meridians bend on this projection and
+// the pole is a short line, so a box that reaches far north (Russia, Canada) has corners well inside its true outline,
+// and its two corners would centre the view on the wrong place. The opening view keeps its corners.
+function focusBounds([[x0, y0], [x1, y1]], duration = 700, edges = false) {
+  let [[px0, py0], [px1, py1]] = [projection([x0, y1]), projection([x1, y0])];
+  if (edges) {
+    const pts = [];
+    for (let i = 0; i <= 24; i++) { const x = x0 + (x1 - x0) * i / 24, y = y0 + (y1 - y0) * i / 24; pts.push([x, y0], [x, y1], [x0, y], [x1, y]); }
+    const ps = pts.map(p => projection(p)).filter(Boolean);
+    [px0, px1, py0, py1] = [d3.min(ps, p => p[0]), d3.max(ps, p => p[0]), d3.min(ps, p => p[1]), d3.max(ps, p => p[1])];
+  }
   const k = Math.min(40, 0.9 / Math.max((px1 - px0) / W, (py1 - py0) / H));
   const t = d3.zoomIdentity.translate(W / 2, H / 2).scale(k).translate(-(px0 + px1) / 2, -(py0 + py1) / 2);
   if (duration) svg.transition().duration(duration).call(zoom.transform, t); else svg.call(zoom.transform, t);
@@ -325,9 +334,14 @@ function countryShapes(gw, dates) {
 function zoomToCountry(gw, dates) {
   const shapes = countryShapes(gw, dates);
   if (!shapes.length) return;
-  const [[x0, y0], [x1, y1]] = d3.geoBounds({ type: 'FeatureCollection', features: shapes });
-  const pad = Math.max(6, (x1 - x0) * 0.5);
-  if (x1 - x0 < 180) focusBounds([[x0 - pad, y0 - pad / 2], [x1 + pad, y1 + pad / 2]]);
+  let [[x0, y0], [x1, y1]] = d3.geoBounds({ type: 'FeatureCollection', features: shapes });
+  // The map is not rotated, so a box must stay between -180 and 180 or its corner projects on the far side of the
+  // map. A state across the 180th meridian (the Soviet Union / Russia, by Chukotka) has its west edge east of its
+  // east edge: its main body, west edge to 180, is framed. The padding stops at the map's edges (Alaska, Canada).
+  if (x0 > x1) x1 = 180;
+  // North and south, at most half the state's own height: a state far wider than tall (Russia) is not pulled south.
+  const pad = Math.max(6, (x1 - x0) * 0.5), padY = Math.min(pad / 2, Math.max(3, (y1 - y0) * 0.5));
+  if (x1 - x0 < 180) focusBounds([[Math.max(-180, x0 - pad), Math.max(-90, y0 - padY)], [Math.min(180, x1 + pad), Math.min(90, y1 + padY)]], 700, true);
 }
 
 async function downloadGif(gw, a, y, changes) {

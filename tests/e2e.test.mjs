@@ -189,6 +189,38 @@ test('border animation steps through the year', async () => {
   assert.match(first, /1 Jan 1938/);
 });
 
+// Jude, 14 November 2026: Russia's border changes zoomed in on Greenland. The Soviet Union / Russia crosses the 180th
+// meridian (Chukotka), so its box ran from 20 E to 170 W; the United States and Canada had boxes padded past 180 W.
+// The map is not rotated, so each box now stays within -180..180, and Russia's frames its main body. Once it has
+// zoomed, the state's own centre (d3.geoCentroid of its shapes on that date) lies in the middle 60% of the map,
+// also while its border changes play.
+test('choosing a state across or near the 180th meridian zooms onto that state', async () => {
+  const where = (gw, date) => page.evaluate(async ([gw, date]) => {
+    const svg = document.querySelector('#map'), [, , W, H] = svg.getAttribute('viewBox').split(' ').map(Number);
+    const topo = await (await fetch('data/borders.topo.json')).json(), today = new Date().toISOString().slice(0, 10);
+    const all = topojson.feature(topo, topo.objects.borders).features, on = d => all.filter(f => f.properties.s <= d && d <= f.properties.e);
+    // The projection the page draws with (app.js: fitted to today's states) and its zoom.
+    const proj = d3.geoNaturalEarth1().fitExtent([[10, 10], [W - 10, H - 10]], { type: 'FeatureCollection', features: on(today) });
+    const mine = on(date).filter(f => f.properties.gw === gw);
+    const [x, y] = d3.zoomTransform(svg).apply(proj(d3.geoCentroid({ type: 'FeatureCollection', features: mine })));
+    return [x / W, y / H];
+  }, [gw, date]);
+  const inMiddle = ([fx, fy], what) => assert.ok(fx > 0.2 && fx < 0.8 && fy > 0.2 && fy < 0.8, `${what}: the state's centre at ${fx.toFixed(2)}, ${fy.toFixed(2)} of the map`);
+  for (const [y, gw] of [[1950, 365], [2000, 365], [2000, 2], [2000, 20]]) {
+    await open(`#y=${y}&c=${gw}`);
+    await page.waitForTimeout(1200); // the zoom's 700 ms transition
+    inMiddle(await where(gw, `${y}-12-31`), `#y=${y}&c=${gw}`);
+  }
+  await open('#y=1991&c=365');
+  if (await page.locator('#animate').count()) {
+    await page.click('#animate');
+    await page.waitForSelector('#anim-label:not([hidden])');
+    await page.waitForTimeout(1200);
+    inMiddle(await where(365, '1991-01-01'), 'while Russia\'s border changes play');
+  }
+  assert.deepEqual(errors, []);
+});
+
 test('historical names follow the date', async () => {
   await open('#y=1960&c=365');
   assert.equal(await page.textContent('#panel h2'), 'Soviet Union');

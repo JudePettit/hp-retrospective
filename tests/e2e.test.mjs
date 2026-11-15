@@ -27,7 +27,8 @@ test('loads with data and no script errors', async () => {
   await open('');
   assert.match(await page.textContent('#status'), /79 countries/);
   assert.match(await page.textContent('#status'), /1926–present/);
-  assert.equal(await page.textContent('#year-big'), String(new Date().getUTCFullYear()));
+  // With no year in the address the map opens on its last two years (the next test).
+  assert.equal(await page.textContent('#year-big'), `${new Date().getUTCFullYear() - 1}–${new Date().getUTCFullYear()}`);
   assert.deepEqual(errors, []);
 });
 
@@ -66,6 +67,50 @@ test('a year\'s count of states says how it differs from the coverage over all t
   assert.match(await page.textContent('#table-caption'), new RegExp(`For each of the ${head[1]} on the map:`));
   assert.equal(await page.locator('#year-table tbody tr').count(), +head[1], 'the table lists exactly the states the note counts');
   await page.click('#tab-map');
+});
+
+// Jude, 14 November 2026: "The sliders on the maps currently start off as overlayed on one another. They should start
+// off one apart so both are visible when you first open the map." With no year in the address the map opens with the
+// start one year before the end, on the last two years, shown as any period is; an address naming one year keeps it.
+test('opened with no year, the handles stand one year apart and the map shows the last two years as a period', async () => {
+  const y = new Date().getUTCFullYear();
+  const handles = () => page.evaluate(() => {
+    const el = document.querySelector('#period'), t = parseFloat(getComputedStyle(el).getPropertyValue('--prp-period-thumb')) || 16;
+    const at = i => { const r = i.getBoundingClientRect(); return r.left + t / 2 + ((+i.value - +i.min) / Math.max(1, +i.max - +i.min)) * (r.width - t); };
+    const f = el.querySelector('#from'), to = el.querySelector('#year');
+    return { from: f.dataset.value, to: to.dataset.value, apart: at(to) - at(f) > 0, joined: el.querySelector('.prp-period-range').classList.contains('joined') };
+  });
+  await open('');
+  assert.deepEqual(await handles(), { from: String(y - 1), to: String(y), apart: true, joined: false });
+  assert.equal(await page.textContent('#year-big'), `${y - 1}–${y}`);
+  assert.equal(await page.textContent('#year-label'), 'Period');
+  assert.equal(await page.textContent('#legend-title'), 'In the period');
+  assert.equal(new URL(page.url()).hash, '', 'opening writes nothing to the address');
+  // The start moved a year further back: the address carries the period.
+  await page.locator('#from').focus();
+  await page.keyboard.press('ArrowLeft');
+  assert.equal(await page.textContent('#year-big'), `${y - 2}–${y}`);
+  assert.match(page.url(), new RegExp(`#y=${y}&f=${y - 2}$`));
+  // An address that names one year keeps it: the handles together, as before.
+  await open(`#y=${y}`);
+  assert.deepEqual(await handles(), { from: String(y), to: String(y), apart: false, joined: true });
+  assert.equal(await page.textContent('#year-big'), String(y));
+  assert.deepEqual(errors, []);
+});
+
+// Play from that opening runs through the years from 1926, as play from the single last year did, not one step.
+test('play from the opening travels through the years from the first, one year at a time', async () => {
+  const y = new Date().getUTCFullYear();
+  await open('');
+  await page.click('#play');
+  assert.equal(await page.getAttribute('#play', 'aria-label'), 'Pause');
+  // The end runs on past the first year, the start with it (one year, travelling).
+  await page.waitForFunction(() => { const f = document.querySelector('#from'), t = document.querySelector('#year'); return +t.dataset.value > 1926 && f.dataset.value === t.dataset.value; }, null, { timeout: 8000 });
+  await page.click('#play');
+  const at = await page.evaluate(() => [document.querySelector('#from').dataset.value, document.querySelector('#year').dataset.value].map(Number));
+  assert.ok(at[0] === at[1] && at[1] > 1926 && at[1] < y - 1, JSON.stringify(at));
+  assert.equal(await page.getAttribute('#play', 'aria-label'), 'Play through the years');
+  assert.deepEqual(errors, []);
 });
 
 test('the slider redraws borders and the year summary', async () => {

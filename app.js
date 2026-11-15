@@ -534,11 +534,11 @@ function writeHash() {
   const h = `#y=${state.year}${f != null ? `&f=${f}` : ''}${state.selected ? `&c=${state.selected}` : ''}`;
   if (location.hash !== h) history.replaceState(null, '', h);
 }
-// An f at or after the year, or unreadable, is a single year.
+// An f at or after the year, or unreadable, is a single year; an address with no year at all opens on the last two.
 function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
   const y = +p.get('y') || state.data.lastYear; const c = +p.get('c');
-  return { y, f: PRPPeriod.rules.readStart(period.get().stops, p.get('f'), y, 'end'), c: country(c) ? c : null };
+  return { y, f: PRPPeriod.rules.readStart(period.get().stops, p.get('f'), y, 'end', !p.get('y') && !p.get('f')), c: country(c) ? c : null };
 }
 
 function setupSearch() {

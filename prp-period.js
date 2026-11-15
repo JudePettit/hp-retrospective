@@ -15,6 +15,10 @@
                     archive, the Political Retrospective) show one time: the start rides on the end handle, so a plain
                     year is that one year, as before.
    With the start at rest a page behaves exactly as it did with one handle, and writes no start parameter to its address.
+   Opening (Jude, 14 November 2026): a snapshot page whose address names no time at all opens with the start one stop
+   before the end, so both handles can be seen and the map shows that two-step period, as any period chosen by hand
+   (readStart's `bare`, below); an address that names one time or a period keeps it. An up-to page opens apart already,
+   and a page of one stop has one handle position.
 
    const period = PRPPeriod.mount(el, {
      stops,      ascending values: numbers (years) or ISO strings ('YYYY-MM', 'YYYY-MM-DD'); [] until the data loads
@@ -50,7 +54,8 @@
      a track click and play move both handles, and only the start handle opens a period: dragged or keyed back, it opens
      one; forward, it carries both;
    - play runs from the start handle: from the last stop it begins again at the start of the period (on a snapshot page
-     a single time begins again at the first stop) and stops at the last stop;
+     a single time, or the opening period of the last two stops, begins again at the first stop and travels as one)
+     and stops at the last stop;
    - any handle input, track click or ‹ › click stops play; set() does not (pages stop it where they need to).
    The inputs take no pointer events, only their thumbs, so either handle can be dragged where the other isn't. When the
    handles meet, the one in front is the one that can move off: the start on a snapshot page (it wears a ring there, so
@@ -88,8 +93,11 @@
   // ‹ › and a page's keys; between: the end's value lies between stops, so a step back first goes to its own stop.
   const stepBy = (s, d, between = false) => endTo(s, d < 0 && between ? s.j : s.j + d);
   // Play: travel (a single time on a snapshot page moves as one) or grow (the end runs on from the start). The mode is
-  // fixed for the whole run; at the last stop play begins again at the start of the period.
-  const playMode = s => (travels(s) ? 'travel' : 'grow');
+  // fixed for the whole run; at the last stop play begins again at the start of the period. A snapshot page's opening
+  // period (the last two stops, readStart's `bare`) plays as the single last time did before it: through every stop
+  // from the first, as one.
+  const opening = s => s.rest === 'end' && s.j === s.n - 1 && s.i === s.j - 1;
+  const playMode = s => (travels(s) || opening(s) ? 'travel' : 'grow');
   const playStart = (s, mode) => (s.j < s.n - 1 ? s : mode === 'travel' ? { ...s, i: 0, j: 0 } : { ...s, j: s.i });
   const playTick = (s, mode) => (s.j >= s.n - 1 ? null : mode === 'travel' ? { ...s, i: s.j + 1, j: s.j + 1 } : { ...s, j: s.j + 1 });
   // Which input is in front, and whether the handles sit together.
@@ -100,8 +108,12 @@
   const barHeight = (c, max) => (c > 0 ? 0.12 + 0.88 * Math.sqrt(c / Math.max(1, max)) : 0);
   // The address: a page writes its start parameter only away from rest, and reads one back to hand to set(): absent,
   // unreadable or at its rest (on or before the first stop; on a snapshot page, at or after the end) means at rest.
+  // bare: the address names no time at all, so a snapshot page opens on the stop before the end (openStart; with one
+  // stop, or the end on the first, the one time).
   const startParam = p => (p.atRest ? null : p.from);
-  function readStart(stops, raw, to, rest = 'first') {
+  const openStart = (stops, to) => { const j = indexOf(stops, to == null ? stops.at(-1) : to); return j > 0 ? stops[j - 1] : null; };
+  function readStart(stops, raw, to, rest = 'first', bare = false) {
+    if (bare && rest === 'end') return stops.length ? openStart(stops, to) : null;
     const f = asStop(stops, raw);
     if (f == null || !stops.length) return null;
     if (rest === 'end' ? to != null && cmp(f, asStop(stops, to)) >= 0 : indexOf(stops, f) === 0) return null;
@@ -292,6 +304,6 @@
 
   root.PRPPeriod = {
     mount,
-    rules: { indexOf, atRest, travels, startTo, endTo, trackTo, trackMoves, stepBy, playMode, playStart, playTick, layering, consecutive, fillOf, tickAt, barHeight, startParam, readStart, compare: cmp },
+    rules: { indexOf, atRest, travels, startTo, endTo, trackTo, trackMoves, stepBy, playMode, playStart, playTick, layering, consecutive, fillOf, tickAt, barHeight, startParam, openStart, readStart, compare: cmp },
   };
 })();

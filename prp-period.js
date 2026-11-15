@@ -96,8 +96,9 @@
   // fixed for the whole run; at the last stop play begins again at the start of the period. A snapshot page's opening
   // period (the last two stops, readStart's `bare`) plays as the single last time did before it: through every stop
   // from the first, as one.
-  const opening = s => s.rest === 'end' && s.j === s.n - 1 && s.i === s.j - 1;
-  const playMode = s => (travels(s) || opening(s) ? 'travel' : 'grow');
+  // open: how many stops apart the opening period's handles are (1, or more on a phone: openSteps, below).
+  const opening = (s, open = 1) => s.rest === 'end' && s.j === s.n - 1 && s.j - s.i === Math.max(1, open);
+  const playMode = (s, open = 1) => (travels(s) || opening(s, open) ? 'travel' : 'grow');
   const playStart = (s, mode) => (s.j < s.n - 1 ? s : mode === 'travel' ? { ...s, i: 0, j: 0 } : { ...s, j: s.i });
   const playTick = (s, mode) => (s.j >= s.n - 1 ? null : mode === 'travel' ? { ...s, i: s.j + 1, j: s.j + 1 } : { ...s, j: s.j + 1 });
   // Which input is in front, and whether the handles sit together.
@@ -111,9 +112,13 @@
   // bare: the address names no time at all, so a snapshot page opens on the stop before the end (openStart; with one
   // stop, or the end on the first, the one time).
   const startParam = p => (p.atRest ? null : p.from);
-  const openStart = (stops, to) => { const j = indexOf(stops, to == null ? stops.at(-1) : to); return j > 0 ? stops[j - 1] : null; };
-  function readStart(stops, raw, to, rest = 'first', bare = false) {
-    if (bare && rest === 'end') return stops.length ? openStart(stops, to) : null;
+  // steps: how many stops before the end the opening start sits (1; more on a phone, from openSteps).
+  const openStart = (stops, to, steps = 1) => { const j = indexOf(stops, to == null ? stops.at(-1) : to); return j > 0 ? stops[Math.max(0, j - Math.max(1, steps))] : null; };
+  // MP-03 (15 Nov 2026): on a narrow screen a long track puts one step only a few pixels apart, so the handles still
+  // cover each other; the opening is as many steps apart as gives at least minPx between them at the drawn width.
+  const openSteps = (n, width, minPx = 24) => (n > 1 && width > 0 ? Math.min(n - 1, Math.max(1, Math.ceil(minPx * (n - 1) / width))) : 1);
+  function readStart(stops, raw, to, rest = 'first', bare = false, steps = 1) {
+    if (bare && rest === 'end') return stops.length ? openStart(stops, to, steps) : null;
     const f = asStop(stops, raw);
     if (f == null || !stops.length) return null;
     if (rest === 'end' ? to != null && cmp(f, asStop(stops, to)) >= 0 : indexOf(stops, f) === 0) return null;
@@ -257,7 +262,7 @@
     }
     function play() {
       if (timer || !o.play || stops.length < 2) return;
-      mode = playMode(s);
+      mode = playMode(s, typeof o.open === 'function' ? +o.open() || 1 : +o.open || 1);
       commit(playStart(s, mode), 'play', 'to');
       setButton(true);
       const every = typeof o.play.interval === 'function' ? +o.play.interval() : +o.play.interval;
@@ -304,6 +309,6 @@
 
   root.PRPPeriod = {
     mount,
-    rules: { indexOf, atRest, travels, startTo, endTo, trackTo, trackMoves, stepBy, playMode, playStart, playTick, layering, consecutive, fillOf, tickAt, barHeight, startParam, openStart, readStart, compare: cmp },
+    rules: { indexOf, atRest, travels, startTo, endTo, trackTo, trackMoves, stepBy, playMode, playStart, playTick, layering, consecutive, fillOf, tickAt, barHeight, startParam, openStart, openSteps, readStart, compare: cmp },
   };
 })();

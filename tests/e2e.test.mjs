@@ -329,3 +329,27 @@ test('PRP styling and phone layout', async () => {
   assert.ok(scroll <= width + 1, `page is ${scroll}px wide on ${width}px`);
   await m.close();
 });
+
+// MP-03 (15 Nov 2026, Jude's "Use your judgement" on the sliders on a phone): at 390 px one year is about 3 px of
+// track, so the opening is as many years apart as gives at least about 24 px between the handles, the latest year at
+// the right one; at desktop width it is still one year apart (the test above).
+test('on a phone (390 px), opened with no year, the handles stand at least 24 px apart, the latest year at the right', async () => {
+  const y = new Date().getUTCFullYear();
+  const m = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const errors = []; m.on('pageerror', e => errors.push(e.message));
+  try {
+    await m.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await m.waitForFunction(() => document.querySelector('#year')?.dataset.value, null, { timeout: 20000 });
+    const h = await m.evaluate(() => {
+      const el = document.querySelector('#period'), t = parseFloat(getComputedStyle(el).getPropertyValue('--prp-period-thumb')) || 16;
+      const at = i => { const r = i.getBoundingClientRect(); return r.left + t / 2 + ((+i.value - +i.min) / Math.max(1, +i.max - +i.min)) * (r.width - t); };
+      const f = el.querySelector('#from'), to = el.querySelector('#year');
+      return { from: +f.dataset.value, to: +to.dataset.value, px: at(to) - at(f) };
+    });
+    assert.equal(h.to, y);
+    assert.ok(h.px >= 23, `handles ${h.px.toFixed(1)} px apart`);
+    assert.ok(y - h.from > 1 && y - h.from < 20, `opens ${y - h.from} years apart`);
+    assert.equal(await m.textContent('#year-big'), `${h.from}–${y}`);
+    assert.deepEqual(errors, []);
+  } finally { await m.close(); }
+});

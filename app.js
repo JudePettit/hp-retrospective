@@ -503,7 +503,7 @@ function render() {
 const period = PRPPeriod.mount($('#period'), {
   rest: 'end', ids: { from: 'from', to: 'year', prev: 'prev', play: 'play', next: 'next' },
   names: { from: 'First year of the period', to: 'Year shown, or the last of the period', prev: 'Previous year', next: 'Next year' },
-  play: { interval: 900, label: 'Play through the years' },
+  play: { interval: 900, label: 'Play through the years' }, open: () => openSteps(),
   onChange: p => { state.from = p.from; state.year = p.to; render(); writeHash(); },
 });
 // The years shown from code (the address, the search): a start of null is one year; a start after the end becomes the end.
@@ -534,11 +534,19 @@ function writeHash() {
   const h = `#y=${state.year}${f != null ? `&f=${f}` : ''}${state.selected ? `&c=${state.selected}` : ''}`;
   if (location.hash !== h) history.replaceState(null, '', h);
 }
-// An f at or after the year, or unreadable, is a single year; an address with no year at all opens on the last two.
+// MP-03 (15 Nov 2026): on a phone the opening's two handles sit at least about 24 px apart at the track's drawn
+// width, the latest year still at the right handle; on wider screens they open one year apart, as before.
+function openSteps() {
+  if (!matchMedia('(max-width: 767px)').matches) return 1;
+  const w = document.getElementById('year')?.getBoundingClientRect().width || $('#period').getBoundingClientRect().width;
+  return PRPPeriod.rules.openSteps(period.get().stops.length, w);
+}
+// An f at or after the year, or unreadable, is a single year; an address with no year at all opens on the last two
+// (more on a phone: openSteps).
 function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
   const y = +p.get('y') || state.data.lastYear; const c = +p.get('c');
-  return { y, f: PRPPeriod.rules.readStart(period.get().stops, p.get('f'), y, 'end', !p.get('y') && !p.get('f')), c: country(c) ? c : null };
+  return { y, f: PRPPeriod.rules.readStart(period.get().stops, p.get('f'), y, 'end', !p.get('y') && !p.get('f'), openSteps()), c: country(c) ? c : null };
 }
 
 function setupSearch() {

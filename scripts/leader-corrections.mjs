@@ -100,7 +100,12 @@ export const CORRECTIONS = {
   // Switzerland: President of the Swiss Confederation (Wikidata P39; Wikipedia's list).
   225: {
     from: '2016-01-01',
-    edit: { '2015-01-01': { full: 'Simonetta Sommaruga', url: W('Simonetta Sommaruga'), end: '2015-12-31' } },
+    edit: {
+      '2015-01-01': { full: 'Simonetta Sommaruga', url: W('Simonetta Sommaruga'), end: '2015-12-31' },
+      // Willy Spühler (1902-1990), President in 1963 and 1968, not the businessman Peter Spuhler (MI-10, 15 Nov).
+      '1963-01-01': { name: 'Spühler', full: 'Willy Spühler', url: W('Willy Spühler') },
+      '1968-01-01': { name: 'Spühler', full: 'Willy Spühler', url: W('Willy Spühler') }
+    },
     leaders: [
       swiss(2016, 'Johann Schneider-Ammann'), swiss(2017, 'Doris Leuthard'), swiss(2018, 'Alain Berset'),
       swiss(2019, 'Ueli Maurer'), swiss(2020, 'Simonetta Sommaruga'), swiss(2021, 'Guy Parmelin'),
@@ -110,15 +115,29 @@ export const CORRECTIONS = {
   },
   // Greece: Prime Minister. Wikidata's statement on Greece dates Mitsotakis from 8 June 2019 (he took office on
   // 8 July) and its label for him had become a number; Sarmas led the caretaker government in 2023.
+  // The links to the wrong man of the name (MI-10's sweep, 15 November 2026; each title checked that day against
+  // Wikipedia's article and its description): Kostas Karamanlis, not his uncle Konstantinos (1907-1998); George
+  // Papandreou (born 1952), not his grandfather Georgios (1888-1968); Ioannis Grivas, the judge who led the 1989
+  // caretaker government, not Theodoros Grivas (1797-1862).
   350: {
     from: '2019-06-08',
-    edit: { '2015-01-26': { end: '2019-07-08' } },
+    edit: {
+      '2015-01-26': { end: '2019-07-08' },
+      '1989-10-11': { name: 'Grivas', full: 'Ioannis Grivas', url: W('Ioannis Grivas') },
+      '2004-03-10': { name: 'Karamanlis', full: 'Kostas Karamanlis', url: W('Kostas Karamanlis') },
+      '2009-10-06': { name: 'Papandreou', full: 'George Papandreou', url: W('George Papandreou') }
+    },
     leaders: [
       P('Kyriakos Mitsotakis', '2019-07-08', '2023-05-25'),
       P('Ioannis Sarmas', '2023-05-25', '2023-06-26'),
       P('Kyriakos Mitsotakis', '2023-06-26', null)
     ]
-  }
+  },
+  // Links that led to a disambiguation page (MI-10, 15 November 2026): the person's own article, checked that day.
+  42: { edit: { '1963-02-27': { url: W('Juan Bosch (politician)') } } },
+  367: { edit: { '2000-05-05': { url: W('Andris Bērziņš (prime minister)') } } },
+  385: { edit: { '1926-03-03': { url: W('Ivar Lykke (politician)') } } },
+  395: { edit: { '1963-11-14': { url: W('Bjarni Benediktsson (born 1908)') } } }
 };
 
 const hasLetters = s => /\p{L}/u.test(s || '');

@@ -353,3 +353,21 @@ test('on a phone (390 px), opened with no year, the handles stand at least 24 px
     assert.deepEqual(errors, []);
   } finally { await m.close(); }
 });
+
+// MI-10's sweep (15 Nov 2026): leader links that led to the wrong man of the name, or to a disambiguation page.
+test('leader links name the right person: Kostas Karamanlis, George Papandreou, Ioannis Grivas, Willy Spühler and four more', () => {
+  const data = JSON.parse(readFileSync(new URL('../data/countries.json', import.meta.url), 'utf8'));
+  const at = (gw, start) => { const l = data.countries[gw].leaders.find(x => x.start === start); return [l.full, decodeURIComponent(l.url.split('/wiki/')[1])]; };
+  assert.deepEqual(at(350, '2004-03-10'), ['Kostas Karamanlis', 'Kostas_Karamanlis']);
+  assert.deepEqual(at(350, '2009-10-06'), ['George Papandreou', 'George_Papandreou']);
+  assert.deepEqual(at(350, '1989-10-11'), ['Ioannis Grivas', 'Ioannis_Grivas']);
+  assert.deepEqual(at(350, '1974-07-24'), ['Konstantinos Karamanlis', 'Konstantinos_Karamanlis']); // the uncle's own terms stay
+  assert.deepEqual(at(225, '1963-01-01'), ['Willy Spühler', 'Willy_Spühler']);
+  assert.deepEqual(at(225, '1968-01-01'), ['Willy Spühler', 'Willy_Spühler']);
+  assert.equal(at(42, '1963-02-27')[1], 'Juan_Bosch_(politician)');
+  assert.equal(at(367, '2000-05-05')[1], 'Andris_Bērziņš_(prime_minister)');
+  assert.equal(at(385, '1926-03-03')[1], 'Ivar_Lykke_(politician)');
+  assert.equal(at(395, '1963-11-14')[1], 'Bjarni_Benediktsson_(born_1908)');
+  const all = JSON.stringify(data);
+  for (const wrong of ['Peter_Spuhler', 'Theodoros_Grivas', 'Georgios_Papandreou']) assert.ok(!all.includes(wrong), wrong);
+});

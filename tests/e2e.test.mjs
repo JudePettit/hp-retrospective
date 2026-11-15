@@ -69,6 +69,33 @@ test('a year\'s count of states says how it differs from the coverage over all t
   await page.click('#tab-map');
 });
 
+// Correction RT-02 (15 November 2026): the leader lists of nine countries stopped years ago (Archigos ends in 2015 and
+// Wikidata did not always continue it), so National Analysis showed a past leader as current. Every state that still
+// exists must have a list whose latest leader is still in office and named; a leader carried over from Archigos
+// (whose data ends in 2015) must be one known to be still in office; a state with no list at all is named here.
+test('every existing state\'s leader list reaches the present', () => {
+  const data = JSON.parse(readFileSync(new URL('../data/countries.json', import.meta.url), 'utf8'));
+  const shapes = JSON.parse(readFileSync(new URL('../data/borders.topo.json', import.meta.url), 'utf8')).objects.borders.geometries;
+  const drawn = new Set(shapes.map(g => g.properties.gw)), current = new Set(shapes.filter(g => g.properties.e === '9999-12-31').map(g => g.properties.gw));
+  // Archigos has no modern record for these, and no list has been built for them (they have no border in CShapes either,
+  // except Montenegro, which Archigos covers only before 1918).
+  const NO_LIST = ['Dominica', 'Grenada', 'Saint Lucia', 'Saint Vincent and the Grenadines', 'Antigua and Barbuda', 'Saint Kitts and Nevis', 'Monaco', 'Liechtenstein', 'Andorra', 'San Marino', 'Montenegro'];
+  // Archigos records still open at its last day whose holder was still in office in November 2026.
+  const STILL_IN_OFFICE = { Nicaragua: 'Daniel Ortega', Albania: 'Edi Rama', 'Soviet Union / Russia': 'Vladimir Putin', Azerbaijan: 'Ilham Aliyev', 'Saudi Arabia': 'Salman of Saudi Arabia', China: 'Xi Jinping' };
+  const problems = [], empty = [];
+  for (const [gw, c] of Object.entries(data.countries)) {
+    if (drawn.has(+gw) && !current.has(+gw)) continue; // a state that no longer exists (Weimar and Nazi Germany, East Germany, Czechoslovakia)
+    const last = [...c.leaders].sort((a, b) => a.start.localeCompare(b.start)).at(-1);
+    if (!last) { empty.push(c.name); continue; }
+    const who = last.full || last.name;
+    if (last.end) problems.push(`${c.name}: the list ends with ${who}, out of office since ${last.end}`);
+    else if (!/\p{L}/u.test(who)) problems.push(`${c.name}: the current leader's name is "${who}"`);
+    else if (last.source === 'Archigos' && STILL_IN_OFFICE[c.name] !== who) problems.push(`${c.name}: ${who} (Archigos, from ${last.start}) is not known to be still in office`);
+  }
+  assert.deepEqual(problems, []);
+  assert.deepEqual(empty.sort(), [...NO_LIST].sort(), 'the states with no leader list');
+});
+
 // Jude, 14 November 2026: "The sliders on the maps currently start off as overlayed on one another. They should start
 // off one apart so both are visible when you first open the map." With no year in the address the map opens with the
 // start one year before the end, on the last two years, shown as any period is; an address naming one year keeps it.

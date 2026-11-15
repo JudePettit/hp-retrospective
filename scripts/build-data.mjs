@@ -14,6 +14,7 @@ import { execFileSync } from 'node:child_process';
 import { readDta } from './read-dta.mjs';
 import { COUNTRIES, YEAR_IN, FIRST_YEAR, LAST_YEAR } from './countries.mjs';
 import { displayName } from '../names.mjs';
+import { applyCorrections } from './leader-corrections.mjs';
 
 const ROOT = new URL('..', import.meta.url);
 const path = p => new URL(p, ROOT).pathname.replace(/^\/([A-Z]:)/, '$1');
@@ -327,6 +328,8 @@ for (const [gw, c] of Object.entries(COUNTRIES)) {
     events
   };
 }
+// Lists the sources above leave short of the present, completed by hand (leader-corrections.mjs).
+applyCorrections(countries);
 writeFileSync(path('data/countries.json'), JSON.stringify({
   built: new Date().toISOString().slice(0, 10), firstYear: FIRST_YEAR, lastYear: LAST_YEAR,
   sources: ['CShapes 2.0 (ETH Zürich), CC BY-NC-SA 4.0', 'Archigos 4.1 (Goemans, Gleditsch & Chiozza)', 'Wikidata (CC0)', 'Wikipedia'],

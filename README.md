@@ -41,4 +41,5 @@ This runs end-to-end tests in your installed Edge. Set `RETRO_URL` to test the l
 
 - Archigos gives some leaders by surname only. Where Wikidata has no match, the leader links to a Wikipedia search instead of a specific article.
 - After 2015, each country follows the same office Archigos tracked (head of state or head of government), so a strong leader in the other office appears under "Also in office". Example: Serbia's President Vučić since 2017.
+- Where Archigos and Wikidata leave a leader list short of the present (Guatemala, Poland, Slovakia, Moldova, Romania, Israel, Saudi Arabia, Jamaica, Switzerland and Greece in November 2026), `scripts/leader-corrections.mjs` completes it, each entry checked against Wikidata and Wikipedia; `npm run build-data` applies it, and `node scripts/leader-corrections.mjs` patches `data/countries.json` on its own. Montenegro and the ten microstates have no leader list yet.
 - Election coverage depends on Wikidata. A few elections that Wikidata doesn't link to the country are missing, for example Germany's March 1933 election.

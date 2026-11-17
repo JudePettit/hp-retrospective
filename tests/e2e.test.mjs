@@ -571,3 +571,24 @@ test('leader links name the right person: Kostas Karamanlis, George Papandreou, 
   const all = JSON.stringify(data);
   for (const wrong of ['Peter_Spuhler', 'Theodoros_Grivas', 'Georgios_Papandreou']) assert.ok(!all.includes(wrong), wrong);
 });
+
+// E6 of the decisions of 17 November 2026: the footer says which elections are corrected, from what, how many and where
+// the list is, read from the list itself (scripts/election-corrections.mjs), so the line cannot drift from it.
+test('the footer says which election dates are corrected, from each election\'s Wikipedia article, and where the list is', async () => {
+  const { ELECTIONS } = await import('../scripts/election-corrections.mjs');
+  await open('');
+  const line = (await page.textContent('#election-corrections')).replace(/\s+/g, ' ').trim();
+  const words = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'];
+  // "This site's copy of Wikidata", not "Wikidata": Grenada 2026 was wrong only in the build's cached fetch (Wikidata
+  // itself now gives 5 November 2026), and Grenada 1967 and 2003 have Wikidata's right date under a wrong country.
+  assert.ok(line.startsWith(`${words[ELECTIONS.length]} elections are corrected where this site’s copy of Wikidata had the wrong date or country`), line);
+  assert.ok(!/Wikidata dates wrongly|checked against a second source/.test(line), `claims no more than the list holds: ${line}`);
+  const data = JSON.parse(readFileSync(new URL('../data/countries.json', import.meta.url), 'utf8'));
+  const byState = new Map();
+  for (const e of ELECTIONS) { const n = data.countries[e.gw].name.replace(/ \/.*$/, ''); byState.set(n, [...(byState.get(n) || []), e.date.slice(0, 4)].sort()); }
+  for (const [state, years] of byState) assert.ok(line.includes(`${state} ${years.length > 1 ? `${years.slice(0, -1).join(', ')} and ${years.at(-1)}` : years[0]}`), `${state} ${years}: ${line}`);
+  for (const e of ELECTIONS) assert.ok(e.sources.some(s => /^English Wikipedia's article/.test(s)), `${e.title}: its Wikipedia article`);
+  assert.match(line, /each takes its date and country from its English Wikipedia article/);
+  assert.match(line, /listed, with their sources, in scripts\/election-corrections\.mjs/);
+  assert.ok(!/'/.test(line), 'the typographic apostrophe');
+});

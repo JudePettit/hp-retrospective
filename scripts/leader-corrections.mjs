@@ -21,7 +21,11 @@
 //
 // RT-04 (16 November 2026): the eleven states Archigos does not cover at all (Montenegro and ten microstates) take
 // their whole lists from leader-lists.mjs.
+//
+// Election dates the Wikidata fetch gets wrong or files under the wrong country are corrected here too, from
+// election-corrections.mjs (17 November 2026), so both ways of applying the corrections keep them.
 import { LISTS } from './leader-lists.mjs';
+import { ELECTIONS, correctElections } from './election-corrections.mjs';
 
 const W = t => `https://en.wikipedia.org/wiki/${encodeURIComponent(t.replace(/ /g, '_'))}`;
 const P = (full, start, end, title = full) =>
@@ -210,6 +214,7 @@ export function correctCountry(gw, c) {
 
 export function applyCorrections(countries) {
   for (const [gw, c] of Object.entries(countries)) correctCountry(gw, c);
+  correctElections(countries);
   return countries;
 }
 
@@ -221,4 +226,5 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
   writeFileSync(FILE, JSON.stringify(data));
   const ends = Object.entries(CORRECTIONS).map(([gw]) => { const l = data.countries[gw].leaders.at(-1); return `${data.countries[gw].name}: ${l.full} since ${l.start}`; });
   console.log(`leader corrections applied to ${ends.length} countries\n  ${ends.join('\n  ')}`);
+  console.log(`election corrections applied: ${ELECTIONS.map(e => `${e.title} (${data.countries[e.gw].name}, ${e.date})`).join('; ')}`);
 }

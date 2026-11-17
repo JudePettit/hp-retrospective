@@ -230,6 +230,30 @@ test('the RT-04 lists follow the sources the second readers checked', () => {
   for (const [full, name] of [['Domenico Suzzi Valli', 'Suzzi Valli'], ['Leonida Suzzi Valli', 'Suzzi Valli'], ['Angelo Manzoni Borghesi', 'Manzoni Borghesi'], ['Bartolomeo Manzoni Borghesi', 'Manzoni Borghesi'], ['Federico Pedini Amati', 'Pedini Amati'], ['Marino Valdes Franciosi', 'Franciosi']]) assert.equal(family[full], name, full);
 });
 
+// Small corrections (17 November 2026): three election dates from the Wikidata election fetch were wrong or missing for
+// the states RT-04 added (scripts/election-corrections.mjs gives the sources). Saint Vincent's 2025 election was held on
+// 27 November (Wikidata still gives the forecast 30 November); Grenada's 2026 election on 5 November 2026 (the cached
+// fetch gave 30 June 2027); Grenada's 1967 election, which Wikidata files under Spain, was missing from Grenada, and its
+// 2003 election showed under Spain too.
+test('the election dates of Saint Vincent 2025 and Grenada 1967 and 2026 follow their sources, and none is filed under Spain', async () => {
+  const data = JSON.parse(readFileSync(new URL('../data/countries.json', import.meta.url), 'utf8'));
+  const vote = (gw, title) => data.countries[gw].events.filter(e => e.type === 'election' && e.text === title).map(e => e.date);
+  assert.deepEqual(vote(57, '2025 Vincentian general election'), ['2025-11-27']);
+  assert.deepEqual(vote(55, '2026 Grenadian general election'), ['2026-11-05']);
+  assert.deepEqual(vote(55, '1967 Grenadian general election'), ['1967-08-24']);
+  assert.deepEqual(vote(55, '2003 Grenadian general election'), ['2003-11-27']);
+  assert.deepEqual(data.countries[230].events.filter(e => /Grenad/.test(e.text)), [], 'no Grenadian election under Spain');
+  const shown = async hash => {
+    await open(hash);
+    return page.$$eval('#panel .events li[data-type="election"]', els => els.map(e => `${e.querySelector('time').firstChild.textContent} ${e.querySelector('a').textContent}`));
+  };
+  assert.ok((await shown('#y=2025&c=57')).includes('27 Nov 2025 2025 Vincentian general election'));
+  assert.ok((await shown('#y=2026&c=55')).includes('5 Nov 2026 2026 Grenadian general election'));
+  assert.ok((await shown('#y=1967&c=55')).includes('24 Aug 1967 1967 Grenadian general election'));
+  assert.deepEqual((await shown('#y=1967&c=230')).filter(t => /Grenad/.test(t)), []);
+  assert.deepEqual(errors, []);
+});
+
 // Jude, 14 November 2026: "The sliders on the maps currently start off as overlayed on one another. They should start
 // off one apart so both are visible when you first open the map." With no year in the address the map opens with the
 // start one year before the end, on the last two years, shown as any period is; an address naming one year keeps it.

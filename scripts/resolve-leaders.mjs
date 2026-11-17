@@ -45,7 +45,8 @@ async function resolveQuery(q, surname) {
 // Undo earlier matches that landed on an article about a term of office rather than the person.
 for (const c of Object.values(data.countries)) for (const l of c.leaders) if (l.url && BAD_TITLE.test(decodeURIComponent(l.url.split('/wiki/')[1] || '').replace(/_/g, ' '))) { l.url = null; l.full = null; }
 const todo = [];
-for (const c of Object.values(data.countries)) for (const l of c.leaders) if (!l.url && l.name) todo.push([c, l]);
+// A leader with a Wikidata id comes from a hand-checked list (leader-lists.mjs): no article means there is none.
+for (const c of Object.values(data.countries)) for (const l of c.leaders) if (!l.url && l.name && !l.qid) todo.push([c, l]);
 console.log(`${todo.length} leaders without an article`);
 const memo = new Map();
 let found = 0;

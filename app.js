@@ -30,6 +30,16 @@ const inYears = (start, end, a, b = a) => start <= `${b}-12-31` && (!end || end 
 function leadersIn(gw, a, b = a) {
   return (country(gw)?.leaders || []).filter(l => inYears(l.start, l.end, a, b));
 }
+// Leaders in groups that took office together (the same first day, neither for a single day), in order: San Marino's
+// two Captains Regent, even when one leaves early (1930).
+function coLeaders(leaders) {
+  const groups = [];
+  const lasting = l => l.end !== l.start;
+  for (const l of leaders) { const g = groups.at(-1); if (g && g[0].start === l.start && lasting(g[0]) && lasting(l)) g.push(l); else groups.push([l]); }
+  return groups;
+}
+const lastEnd = g => g.map(l => l.end || '9999-12-31').sort().at(-1);
+const andList = l => (l.length < 2 ? l.join('') : `${l.slice(0, -1).join(', ')} and ${l.at(-1)}`);
 function officesIn(gw, a, b, leaders) {
   const names = new Set(leaders.map(l => (l.full || l.name).toLowerCase()));
   return (country(gw)?.offices || []).filter(o => inYears(o.start, o.end, a, b) && !names.has((o.full || '').toLowerCase()));
@@ -220,7 +230,7 @@ function renderPanel() {
 
   panel.innerHTML = `<button class="close" type="button" id="close" aria-label="Close">✕</button>
     <h2>${esc(name)}</h2>
-    <p class="sub">${shape ? when : `Not an independent state at the end of ${y}`}</p>
+    <p class="sub">${shape ? when : state.features.some(f => f.properties.gw === gw) ? `Not an independent state at the end of ${y}` : `${when} · Not drawn on the map: no border in CShapes 2.0`}</p>
     <h3>Political overview of ${when}</h3>
     <p class="overview">${esc(overviewText(name, a, y, leaders, offices, events, [...ruling.values()]))}</p>
     <div id="wiki-events" class="wiki-events">${page ? '<p class="empty">Loading events from Wikipedia…</p>' : pages.length ? `<p class="note">Wikipedia, year by year: ${pages.map(p => `<a href="${wiki(p)}" target="_blank" rel="noopener">${esc(p.slice(0, 4))}</a>`).join(' · ')}</p>` : ''}</div>
@@ -256,8 +266,14 @@ function renderPanel() {
 function overviewText(name, a, y, leaders, offices, events, ruling) {
   const who = p => `${p.full || p.name}${partiesAt(p, a, y).length ? ` (${partiesAt(p, a, y).map(m => m.name).join(', ')})` : ''}`;
   const parts = [], one = a === y;
+  // Leaders who ruled together (San Marino's two Captains Regent) are joined with "and"; one who left before the other
+  // is marked "until", and one who came while the other was still in office "joined by … from".
+  const groups = coLeaders(leaders);
+  const together = groups.map(g => andList(g.map(l => `${who(l)}${g.length > 1 && (l.end || '9999-12-31') < lastEnd(g) ? ` (until ${fmt(l.end)})` : ''}`)));
+  const sequence = together.map((t, i) => (!i ? t : groups[i - 1].length > 1 && groups[i][0].start < lastEnd(groups[i - 1]) ? `, joined by ${t} (from ${fmt(groups[i][0].start)})` : `, then ${t}`)).join('');
   if (leaders.length === 1) parts.push(`${who(leaders[0])} led ${name} throughout ${one ? y : `${a}–${y}`}.`);
-  else if (leaders.length > 1) parts.push(`${name} had ${leaders.length} leaders ${one ? `in ${y}` : `between ${a} and ${y}`}: ${leaders.map(who).join(', then ')}.`);
+  else if (together.length === 1) parts.push(`${together[0]} led ${name} together throughout ${one ? y : `${a}–${y}`}.`);
+  else if (leaders.length > 1) parts.push(`${name} had ${leaders.length} leaders ${one ? `in ${y}` : `between ${a} and ${y}`}: ${sequence}.`);
   if (offices.length) parts.push(`Also in office: ${offices.map(o => `${who(o)} as ${o.office === 'hos' ? 'head of state' : 'head of government'}`).join('; ')}.`);
   if (ruling.length === 1) parts.push(`The ${ruling[0].name} held power.`);
   const count = t => events.filter(e => e.type === t).length;
@@ -418,7 +434,7 @@ function renderTable() {
     `<button type="button" class="sort" data-sort="${k}">${typeof label === 'function' ? label() : label}<span class="arrow" aria-hidden="true">${k === key ? (dir > 0 ? '↑' : '↓') : '↕'}</span></button></th>`).join('')}</tr>`;
   table.tBodies[0].innerHTML = rows.map(r => `<tr data-gw="${r.gw}"${r.gw === state.selected ? ' class="selected"' : ''}>
       <td><button type="button" class="row-link">${esc(r.name)}</button></td>
-      <td>${r.leaders.length ? r.leaders.map(l => esc(l.full || l.name)).join(' → ') : '<span class="cell-sub">No leader recorded</span>'}</td>
+      <td>${r.leaders.length ? coLeaders(r.leaders).map(g => esc(andList(g.map(l => l.full || l.name)))).join(' → ') : '<span class="cell-sub">No leader recorded</span>'}</td>
       <td><span class="cell-status"><span class="swatch" style="background:${FILL[r.status]}"></span>${STATUS_LABEL[r.status]}</span></td>
       <td class="num">${r.events}</td></tr>`).join('');
   $('#table-caption').textContent = `${coverageNote(y)} For each of the ${rows.length} on the map: who was in charge during ${span(a, y)}, what happened, and how many key events were recorded. Select a column heading to sort, or a row to open the state.`;

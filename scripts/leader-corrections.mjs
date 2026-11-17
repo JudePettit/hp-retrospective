@@ -16,7 +16,12 @@
 //
 // Shape: `from`, the earliest start date the correction rewrites: generated entries starting on or after it are
 // replaced by `leaders` (a generated entry starting after the last one given is newer and is kept). `edit` changes
-// fields of an earlier entry, found by its start date.
+// fields of an earlier entry, found by its start date. `offices`, where given, replaces the state's "Also in office"
+// entries (RT-04's states, whose Wikidata head-of-state and head-of-government statements were incomplete or wrong).
+//
+// RT-04 (16 November 2026): the eleven states Archigos does not cover at all (Montenegro and ten microstates) take
+// their whole lists from leader-lists.mjs.
+import { LISTS } from './leader-lists.mjs';
 
 const W = t => `https://en.wikipedia.org/wiki/${encodeURIComponent(t.replace(/ /g, '_'))}`;
 const P = (full, start, end, title = full) =>
@@ -137,13 +142,16 @@ export const CORRECTIONS = {
   42: { edit: { '1963-02-27': { url: W('Juan Bosch (politician)') } } },
   367: { edit: { '2000-05-05': { url: W('Andris Bērziņš (prime minister)') } } },
   385: { edit: { '1926-03-03': { url: W('Ivar Lykke (politician)') } } },
-  395: { edit: { '1963-11-14': { url: W('Bjarni Benediktsson (born 1908)') } } }
+  395: { edit: { '1963-11-14': { url: W('Bjarni Benediktsson (born 1908)') } } },
+  // RT-04: whole lists, each starting with its first entry.
+  ...Object.fromEntries(Object.entries(LISTS).map(([gw, l]) => [gw, { from: l.leaders[0].start, leaders: l.leaders, offices: l.offices }]))
 };
 
 const hasLetters = s => /\p{L}/u.test(s || '');
 const titleOf = url => decodeURIComponent((url || '').split('/wiki/')[1] || '').replace(/_/g, ' ').replace(/ \(.*\)$/, '');
-// The same wording build-data.mjs (leaderEvents) gives a leader's arrival.
-const arrival = l => ({ date: l.start, type: l.entry === 'Irregular' ? 'coup' : 'leader', text: `${l.full || l.name} takes power`, url: l.url });
+// The same wording build-data.mjs (leaderEvents) gives a leader's arrival; like it, none before 1926 (the first year).
+const how = l => (l.entry === 'Irregular' ? ' (irregular seizure of power)' : l.entry === 'Foreign Imposition' ? ' (imposed by a foreign power)' : '');
+const arrival = l => ({ date: l.start, type: l.entry === 'Irregular' ? 'coup' : 'leader', text: `${l.full || l.name} takes power${how(l)}`, url: l.url });
 
 // Renames the arrival event of a leader whose name or article changed: same day, and the old article or old name.
 function renameArrival(c, l, old) {
@@ -187,8 +195,15 @@ export function correctCountry(gw, c) {
     c.leaders = [...kept, ...tail, ...newer];
     // Leader events from `from` on follow the corrected list.
     const events = (c.events || []).filter(e => !(['leader', 'coup'].includes(e.type) && e.date >= fix.from));
-    for (const l of c.leaders) if (l.start >= fix.from) events.push(arrival(l));
+    for (const l of c.leaders) if (l.start >= fix.from && l.start >= '1926-01-01') events.push(arrival(l));
     c.events = events.sort((a, b) => a.date.localeCompare(b.date));
+  }
+  if (fix.offices) {
+    // Keep the party tags build-parties.mjs gave an office-holder already in the list.
+    c.offices = fix.offices.map(o => {
+      const old = (c.offices || []).find(x => x.office === o.office && x.start === o.start && x.full === o.full);
+      return { ...o, ...(old?.parties && !o.noParties ? { parties: old.parties } : {}) };
+    });
   }
   return c;
 }

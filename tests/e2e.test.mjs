@@ -77,9 +77,9 @@ test('every existing state\'s leader list reaches the present', () => {
   const data = JSON.parse(readFileSync(new URL('../data/countries.json', import.meta.url), 'utf8'));
   const shapes = JSON.parse(readFileSync(new URL('../data/borders.topo.json', import.meta.url), 'utf8')).objects.borders.geometries;
   const drawn = new Set(shapes.map(g => g.properties.gw)), current = new Set(shapes.filter(g => g.properties.e === '9999-12-31').map(g => g.properties.gw));
-  // Archigos has no modern record for these, and no list has been built for them (they have no border in CShapes either,
-  // except Montenegro, which Archigos covers only before 1918).
-  const NO_LIST = ['Dominica', 'Grenada', 'Saint Lucia', 'Saint Vincent and the Grenadines', 'Antigua and Barbuda', 'Saint Kitts and Nevis', 'Monaco', 'Liechtenstein', 'Andorra', 'San Marino', 'Montenegro'];
+  // Since RT-04 (16 November 2026) every state has a list: Montenegro and the ten microstates, which Archigos does not
+  // cover, were built by hand (the test below).
+  const NO_LIST = [];
   // Archigos records still open at its last day whose holder was still in office in November 2026.
   const STILL_IN_OFFICE = { Nicaragua: 'Daniel Ortega', Albania: 'Edi Rama', 'Soviet Union / Russia': 'Vladimir Putin', Azerbaijan: 'Ilham Aliyev', 'Saudi Arabia': 'Salman of Saudi Arabia', China: 'Xi Jinping' };
   const problems = [], empty = [];
@@ -94,6 +94,140 @@ test('every existing state\'s leader list reaches the present', () => {
   }
   assert.deepEqual(problems, []);
   assert.deepEqual(empty.sort(), [...NO_LIST].sort(), 'the states with no leader list');
+});
+
+// RT-04 (Jude, 15 November 2026: "Add this to the queue of tasks"): Montenegro and the ten microstates had no leader
+// list, because Archigos has no record of them. Each now has a dated list, built by hand in scripts/leader-lists.mjs
+// from Wikidata, Wikipedia and rulers.org, from the state's first day (independence, or 1926 for the four European
+// microstates; Montenegro from its first day on the map) to the present, with no gap or overlap beyond those named here.
+const RT04 = { 54: '1978-11-03', 55: '1974-02-07', 56: '1979-02-22', 57: '1979-10-27', 58: '1981-11-01', 60: '1983-09-19', 221: '1926-01-01', 223: '1926-01-01', 232: '1926-01-01', 331: '1926-01-01', 341: null };
+test('Montenegro and the ten microstates have dated leader lists from their start to the present (RT-04)', () => {
+  const data = JSON.parse(readFileSync(new URL('../data/countries.json', import.meta.url), 'utf8'));
+  const shapes = JSON.parse(readFileSync(new URL('../data/borders.topo.json', import.meta.url), 'utf8')).objects.borders.geometries;
+  // Montenegro starts on its first day on the map (CShapes: 12 June 2006); the ten microstates have no border in CShapes,
+  // so their start is Gleditsch and Ward's (independence, or 1926 for those independent since before it).
+  const startOf = gw => RT04[gw] || shapes.filter(g => g.properties.gw === +gw).map(g => g.properties.s).sort()[0];
+  // Gaps of more than a day between two leaders that the sources show (the office was empty, or the next holder took
+  // office later): the start date of the leader after the gap.
+  // Andorra 1933: the General Council was dismissed and Pallarès left for exile on 19 August; the next Syndic was chosen
+  // on 18 September (rulers.org).
+  const GAPS = { 54: ['1979-06-25'], 232: ['1933-09-18', '1982-01-08'] };
+  // San Marino has two Captains Regent at a time, except while one who died in 1930 was not yet replaced, and while the
+  // provisional government of four held power in October 1957: the number in office on these days.
+  const SAN_MARINO = { '1930-09-10': 1, '1957-10-11': 4 };
+  const day = d => Date.parse(`${d}T00:00:00Z`) / 864e5;
+  const ENTRY = [null, 'Regular', 'Irregular', 'Foreign Imposition'];
+  const EXIT = [null, 'Regular', 'Natural Death', 'Irregular', 'Retired Due to Ill Health', 'Foreign', 'Suicide'];
+  const DATE = /^\d{4}-\d\d-\d\d$/, QID = /^Q[1-9]\d*$/, letters = s => /\p{L}/u.test(s || '');
+  const problems = [];
+  for (const gw of Object.keys(RT04)) {
+    const c = data.countries[gw], start = startOf(gw), say = m => problems.push(`${c.name}: ${m}`);
+    const list = [...c.leaders].sort((a, b) => a.start.localeCompare(b.start));
+    if (!list.length) { say('no leader list'); continue; }
+    if (!(list[0].start <= start && (!list[0].end || list[0].end >= start))) say(`the first leader (${list[0].full}, from ${list[0].start}) is not in office on ${start}`);
+    for (const l of list) {
+      const who = `${l.full} (from ${l.start})`;
+      if (!DATE.test(l.start) || (l.end !== null && !DATE.test(l.end))) say(`${who}: dates ${l.start} to ${l.end}`);
+      if (l.end && l.end < l.start) say(`${who}: ends before it starts`);
+      if (!letters(l.full) || !letters(l.name)) say(`${who}: name "${l.name}"`);
+      // A person Wikidata has no item for is allowed only with the reason written beside them.
+      if (!QID.test(l.qid || '') && !(l.qid === null && letters(l.noQid))) say(`${who}: Wikidata id ${l.qid}`);
+      if (l.url !== null && !/^https:\/\/en\.wikipedia\.org\/wiki\/./.test(l.url)) say(`${who}: link ${l.url}`);
+      if (!ENTRY.includes(l.entry) || !EXIT.includes(l.exit)) say(`${who}: entry ${l.entry}, exit ${l.exit}`);
+    }
+    if (gw === '331') {
+      // On every day a Captain Regent came or went, two are in office (or the number named above), and the list ends
+      // with a pair in office.
+      const days = [...new Set(list.flatMap(l => [l.start, l.end]).filter(Boolean))].sort();
+      for (const d of days) {
+        const n = list.filter(l => l.start <= d && (!l.end || l.end > d)).length;
+        if (n !== (SAN_MARINO[d] || 2)) say(`${n} Captains Regent in office on ${d}`);
+      }
+      if (list.filter(l => !l.end).length !== 2) say('not two Captains Regent in office today');
+      continue;
+    }
+    // Entries with the same start and end form one term of one person.
+    const terms = list.map(l => ({ start: l.start, end: l.end, people: [l.full] }));
+    terms.forEach((t, i) => {
+      if (i < terms.length - 1 && !t.end) say(`${t.people.join(' and ')} (from ${t.start}) has no end but is followed by others`);
+      if (!i) return;
+      const gap = day(t.start) - day(terms[i - 1].end);
+      if (gap < 0) say(`${t.people.join(' and ')} (from ${t.start}) overlaps the term before, which ends ${terms[i - 1].end}`);
+      else if (gap > 1 && !(GAPS[gw] || []).includes(t.start)) say(`a gap of ${gap} days before ${t.people.join(' and ')} (from ${t.start})`);
+    });
+    if (terms.at(-1).end) say(`the list ends on ${terms.at(-1).end}`);
+    // The other office ("Also in office"), replaced for these states from the same sources.
+    for (const o of c.offices) {
+      if (!['hos', 'hog'].includes(o.office) || !DATE.test(o.start) || (o.end && (!DATE.test(o.end) || o.end < o.start)) || !letters(o.full) || !QID.test(o.qid || '')) say(`office ${JSON.stringify(o)}`);
+    }
+    if (!c.offices.length) say('nobody under "Also in office"');
+  }
+  assert.deepEqual(problems, []);
+  // Spot checks against the sources (Wikipedia's lists of office holders and rulers.org).
+  const at = (gw, date) => data.countries[gw].leaders.filter(l => l.start <= date && (!l.end || l.end > date)).map(l => l.full);
+  assert.deepEqual(at(341, '2026-11-16'), ['Milojko Spajić']);
+  assert.deepEqual(at(55, '1983-10-17'), ['Bernard Coard']);
+  assert.deepEqual(at(54, '2004-01-07'), ['Osborne Riviere']);
+  assert.deepEqual(at(221, '1960-01-01'), ['Rainier III']);
+  assert.deepEqual(at(232, '1950-01-01'), ['Francesc Cairat Freixes']);
+  assert.deepEqual(at(223, '1990-01-01'), ['Hans-Adam II']);
+  assert.deepEqual(at(331, '1957-10-20').sort(), ['Alvaro Casali', 'Federico Bigi', 'Pietro Giancecchi', 'Zaccaria Giovanni Savoretti']);
+  assert.deepEqual(at(331, '2020-06-01').sort(), ['Alessandro Mancini', 'Grazia Zafferani']);
+  const grenada = Object.fromEntries(data.countries[55].leaders.map(l => [l.full, l]));
+  for (const who of ['Maurice Bishop', 'Bernard Coard', 'Hudson Austin']) assert.equal(grenada[who].entry, 'Irregular', who);
+});
+
+// RT-04's second readers (16 November 2026) checked the lists against other sources; each correction they found real is
+// held here, with the source it follows.
+test('the RT-04 lists follow the sources the second readers checked', () => {
+  const data = JSON.parse(readFileSync(new URL('../data/countries.json', import.meta.url), 'utf8'));
+  const on = (l, date) => l.start <= date && (!l.end || l.end > date);
+  const at = (gw, date) => data.countries[gw].leaders.filter(l => on(l, date)).map(l => l.full);
+  const office = (gw, kind, date) => data.countries[gw].offices.filter(o => o.office === kind && on(o, date)).map(o => o.full);
+  const find = (gw, full, start) => data.countries[gw].leaders.find(l => l.full === full && (!start || l.start === start));
+  // Montenegro's list starts at independence (3 June 2006, where Wikipedia's list splits Đukanović's term), as Archigos
+  // starts Kosovo, Czechia and Slovakia, so no Montenegro event falls in its years inside Serbia and Montenegro.
+  assert.equal([...data.countries[341].leaders].sort((a, b) => a.start.localeCompare(b.start))[0].start, '2006-06-03');
+  assert.deepEqual(data.countries[341].events.filter(e => e.date < '2006-06-03'), []);
+  assert.deepEqual(office(341, 'hos', '2006-06-03'), ['Filip Vujanović']);
+  assert.deepEqual(office(341, 'hos', '2006-06-02'), []);
+  // Saint Lucia: King acted for the ailing Compton from 1 May 2007 (Wikidata, rulers.org, his own article), as Archigos
+  // dates Olmert from Sharon's stroke.
+  assert.deepEqual(at(56, '2007-06-01'), ['Stephenson King']);
+  assert.equal(find(56, 'John Compton', '2006-12-15').exit, 'Retired Due to Ill Health');
+  // Grenada: Brathwaite's Interim Advisory Council of 1983-84 was non-party (Wikipedia's list: independent); the
+  // National Democratic Congress was founded in 1987.
+  assert.equal(find(55, 'Nicholas Brathwaite', '1983-12-09').parties, undefined);
+  // Saint Kitts and Nevis: Douglas was sworn in on 4 July 1995 (the government's biography, his office's 2012 release,
+  // rulers.org).
+  assert.deepEqual(at(60, '1995-07-05'), ['Denzil Douglas']);
+  // Liechtenstein: Franz Joseph's regency began on 30 March 1938 (the national historical lexicon, rulers.org); Schädler's
+  // government resigned on 15 June 1928 and Prince Alfred ran the government from 24 June (the lexicon).
+  assert.deepEqual(at(223, '1938-03-30'), ['Franz Joseph II']);
+  assert.deepEqual(office(223, 'hog', '1928-06-20'), []);
+  assert.deepEqual(office(223, 'hog', '1928-06-24'), ['Prince Alfred of Liechtenstein']);
+  assert.deepEqual(office(223, 'hog', '1928-06-14'), ['Gustav Schädler']);
+  // Monaco: Piette's resignation was accepted on 15 January 1932 and Bouilloux-Lafont's mission ended on 31 May 1937
+  // (Sovereign Ordinances 1277, 1278 and 2012, Journal de Monaco). Its Ministers of State are appointed officials, and
+  // Dominica's acting President of 1979-80 sat for no party: none carries a party.
+  assert.deepEqual(office(221, 'hog', '1932-01-14'), ['Maurice Piette']);
+  assert.deepEqual(office(221, 'hog', '1937-05-30'), ['Maurice Bouilloux-Lafont']);
+  assert.deepEqual(data.countries[221].offices.filter(o => o.parties), []);
+  assert.deepEqual(data.countries[54].offices.filter(o => o.full === 'Jenner Armour' && o.parties), []);
+  // Andorra: the General Council's own index of office holders and rulers.org name two Syndics Font Altimir and Molné
+  // Armengol; Pallarès left on 19 August 1933; the Bishop Co-Prince Iglesias resigned on 29 April 1969 (Catalan
+  // Wikipedia, Wikidata) and Malla acted from 19 June (Catalan Wikipedia, rulers.org).
+  assert.deepEqual(at(232, '1925-01-01'), ['Pere Font Altimir']);
+  assert.equal(find(232, 'Pere Font Altimir').name, 'Font');
+  assert.deepEqual(at(232, '1936-08-01'), ['Francesc Molné Armengol']);
+  assert.deepEqual(at(232, '1933-09-01'), []);
+  assert.deepEqual(office(232, 'hos', '1969-05-15').filter(n => !/de Gaulle|Poher|Pompidou/.test(n)), []);
+  assert.ok(data.countries[232].offices.some(o => o.full === 'Ramón Iglesias i Navarri' && o.end === '1969-04-29'));
+  assert.ok(data.countries[232].offices.some(o => o.full === 'Ramón Malla Call' && o.start === '1969-06-19'));
+  // San Marino: the sources say only that Lonfernini died in 1930, not how; compound family names are kept whole.
+  assert.equal(find(331, 'Marino Lonfernini').exit, null);
+  const family = Object.fromEntries(data.countries[331].leaders.map(l => [l.full, l.name]));
+  for (const [full, name] of [['Domenico Suzzi Valli', 'Suzzi Valli'], ['Leonida Suzzi Valli', 'Suzzi Valli'], ['Angelo Manzoni Borghesi', 'Manzoni Borghesi'], ['Bartolomeo Manzoni Borghesi', 'Manzoni Borghesi'], ['Federico Pedini Amati', 'Pedini Amati'], ['Marino Valdes Franciosi', 'Franciosi']]) assert.equal(family[full], name, full);
 });
 
 // Jude, 14 November 2026: "The sliders on the maps currently start off as overlayed on one another. They should start
@@ -309,6 +443,48 @@ test('search finds a leader and jumps to their year', async () => {
   await page.press('#search', 'Enter');
   assert.equal(await page.textContent('#year-big'), '1940');
   assert.match(await page.textContent('#panel'), /Winston Churchill/);
+});
+
+// RT-04: the panels of Montenegro and the microstates show who was in charge and who else held office. San Marino's two
+// Captains Regent of a semester rule together, so the overview joins them with "and"; the ten microstates have no
+// border in CShapes, so the panel says that, not that they were not independent.
+test('the panels of Montenegro and the microstates name their leaders (RT-04)', async () => {
+  const leaders = () => page.$$eval('#panel .leader', els => els.map(e => ({ who: e.querySelector('.who a').textContent, tag: e.querySelector('.tag')?.textContent || '' })));
+  await open('#y=2026&c=341');
+  let l = await leaders();
+  assert.ok(l.some(x => x.who === 'Milojko Spajić' && !x.tag), JSON.stringify(l));
+  assert.ok(l.some(x => x.who === 'Jakov Milatović' && x.tag === 'Head of state'), JSON.stringify(l));
+  await open('#y=2026&c=223');
+  l = await leaders();
+  assert.ok(l.some(x => /^Alois/.test(x.who) && !x.tag), JSON.stringify(l));
+  assert.ok(l.some(x => x.who === 'Hans-Adam II' && x.tag === 'Head of state'), JSON.stringify(l));
+  assert.match(await page.textContent('#panel .sub'), /no border in CShapes/);
+  assert.doesNotMatch(await page.textContent('#panel .sub'), /Not an independent state/);
+  await open('#y=1983&c=55');
+  l = await leaders();
+  const inCharge = l.filter(x => x.tag !== 'Head of state' && x.tag !== 'Head of government').map(x => x.who);
+  for (const who of ['Maurice Bishop', 'Bernard Coard', 'Hudson Austin', 'Paul Scoon', 'Nicholas Brathwaite']) assert.ok(inCharge.includes(who), `${who} in ${inCharge.join(', ')}`);
+  for (const who of ['Maurice Bishop', 'Bernard Coard', 'Hudson Austin']) assert.equal(l.find(x => x.who === who).tag, 'irregular entry', who);
+  await open('#y=2020&c=331');
+  const text = await page.textContent('#panel');
+  for (const who of ['Luca Boschi', 'Mariella Mularoni', 'Alessandro Mancini', 'Grazia Zafferani', 'Alessandro Cardelli', 'Mirko Dolcini']) assert.match(text, new RegExp(who));
+  assert.doesNotMatch(text, /No leader recorded/);
+  assert.match(await page.textContent('.overview'), /Alessandro Mancini[^,]* and Grazia Zafferani/);
+  // 1930: Gozi and Lonfernini served together, Lonfernini died on 10 September and Foschi joined Gozi on 16 September
+  // (second reader, 16 November 2026: the overview read as if the three followed one another).
+  await open('#y=1930&c=331');
+  assert.match(await page.textContent('.overview'), /Manlio Gozi[^,]* and Marino Lonfernini[^,]* \(until 10 Sept 1930\), joined by Turiddu Foschi[^,]* \(from 16 Sept 1930\), then Valerio Pasquali/);
+  await page.click('#tab-table');
+  await page.waitForSelector('#year-table tbody tr');
+  assert.equal(await page.locator('#year-table tbody tr[data-gw="331"]').count(), 0, 'San Marino has no border, so the table of states on the map leaves it out');
+  await page.click('#tab-map');
+  await open('#y=2000');
+  await page.fill('#search', 'Skerrit');
+  await page.waitForSelector('#search-results li');
+  await page.press('#search', 'Enter');
+  assert.equal(await page.textContent('#year-big'), '2004');
+  assert.equal(await page.textContent('#panel h2'), 'Dominica');
+  assert.deepEqual(errors, []);
 });
 
 test('year view lists events across countries and opens them', async () => {

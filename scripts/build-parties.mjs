@@ -1,12 +1,15 @@
 // Adds party affiliation to every leader and office-holder in data/countries.json.
-//   node scripts/build-parties.mjs
+//   node scripts/build-parties.mjs              every state
+//   node scripts/build-parties.mjs 331 341      only these states (GW codes); everyone else's tags stay as they are
 // Each person's English Wikipedia article is resolved to Wikidata; "member of political party" (P102)
 // memberships that overlap their time in office become `parties: [{ name, url }]`.
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const FILE = new URL('../data/countries.json', import.meta.url);
 const data = JSON.parse(readFileSync(FILE, 'utf8'));
-const UA = { 'User-Agent': 'JDP-I H&P Retrospective (https://hp-retrospective.pages.dev)' };
+const UA = { 'User-Agent': process.env.BUILD_UA || 'JDP-I H&P Retrospective (https://hp-retrospective.pages.dev)' };
+const ONLY = new Set(process.argv.slice(2).map(Number));
+const states = Object.entries(data.countries).filter(([gw]) => !ONLY.size || ONLY.has(+gw)).map(([, c]) => c);
 const titleOf = url => url && url.includes('/wiki/') ? decodeURIComponent(url.split('/wiki/')[1]).replace(/_/g, ' ') : null;
 const chunks = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, i * n + n));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -23,7 +26,7 @@ async function wb(params) {
 const time = q => q?.[0]?.datavalue?.value?.time?.replace(/^\+/, '').slice(0, 10).replace(/-00/g, '-01') || null;
 
 // Leaders whose Wikidata item had no English label arrive named by QID; use their article title instead.
-for (const c of Object.values(data.countries)) for (const p of [...c.leaders, ...(c.offices || [])]) {
+for (const c of states) for (const p of [...c.leaders, ...(c.offices || [])]) {
   if (/^Q\d+$/.test(p.full || p.name) && titleOf(p.url)) {
     const t = titleOf(p.url).replace(/ \(.*\)$/, '');
     p.full = t; p.name = t.split(' ').at(-1);
@@ -31,7 +34,12 @@ for (const c of Object.values(data.countries)) for (const p of [...c.leaders, ..
 }
 
 const people = [];
-for (const c of Object.values(data.countries)) for (const p of [...c.leaders, ...(c.offices || [])]) if (titleOf(p.url)) people.push(p);
+// `noParties`: a foreign head of state who holds an office here (Andorra's French Co-Prince), whose party is not this
+// state's.
+for (const c of states) for (const p of [...c.leaders, ...(c.offices || [])]) {
+  if (p.noParties) delete p.parties;
+  else if (titleOf(p.url)) people.push(p);
+}
 const titles = [...new Set(people.map(p => titleOf(p.url)))];
 console.log(`${people.length} people, ${titles.length} articles`);
 
@@ -56,6 +64,8 @@ for (const batch of chunks(partyIds, 50)) {
   const ents = await wb({ ids: batch.join('|'), props: 'labels|sitelinks', languages: 'en', sitefilter: 'enwiki' });
   for (const [id, e] of Object.entries(ents)) {
     const title = e.sitelinks?.enwiki?.title;
+    // A party with neither an English name nor an article would show as a bare Wikidata id: left out.
+    if (!e.labels?.en?.value && !title) continue;
     parties.set(id, { name: e.labels?.en?.value || title || id, url: title ? `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}` : `https://www.wikidata.org/wiki/${id}` });
   }
   await sleep(300);
@@ -72,7 +82,8 @@ for (const p of people) {
   const pick = (dated.length ? dated : ms.filter(m => !m.start && !m.end)).sort((a, b) => b.preferred - a.preferred).slice(0, 4);
   delete p.parties;
   // s/e let the page show the membership that applies in the selected year.
-  if (pick.length) { p.parties = pick.filter(m => parties.has(m.qid)).map(m => ({ ...parties.get(m.qid), s: m.start, e: m.end })); tagged++; }
+  const named = pick.filter(m => parties.has(m.qid)).map(m => ({ ...parties.get(m.qid), s: m.start, e: m.end }));
+  if (named.length) { p.parties = named; tagged++; }
 }
 data.sources = { ...data.sources, parties: 'Wikidata "member of political party" (P102), matched to time in office' };
 writeFileSync(FILE, JSON.stringify(data));

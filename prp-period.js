@@ -91,7 +91,8 @@
    the one time, which then moves by that movement's rules.
      movement,   option: the page's default and opening movement ('independent' unless given)
      movements,  option: false draws no buttons. A page may switch them off only with a comment saying why; a control
-                 of one stop hides them by itself (nothing to move), and shows them again when update() gives it more.
+                 of one stop hides them by itself (nothing to move), and shows them again when update() gives it more;
+                 a control with no stops yet keeps their place and shows them when update() gives it its stops.
      ids, names, titles also take independent, together, single (and names.movements, the group's name)
    period.movement()                 the chosen movement
    period.setMovement(m, { silent }) chooses one (anything else: the page's default); stops play if it changes; calls
@@ -265,6 +266,10 @@
         b.setAttribute('aria-pressed', String(m === s.m));
       }
       movesBox.hidden = stops.length === 1; // one stop: nothing to move
+      // No stops yet (a page waiting for its data): the buttons keep their place and cannot be seen, pressed or
+      // focused. Their third name follows the stops, so before the months or days arrive it would read "Single Year",
+      // and a movement chosen then was lost when the page read its address (20 November 2026).
+      movesBox.style.visibility = stops.length ? '' : 'hidden';
       el.dataset.movement = s.m;
     }
     const slider = make('div', 'prp-period-slider');

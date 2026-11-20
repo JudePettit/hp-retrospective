@@ -17,7 +17,7 @@ async function open(hash) {
 }
 
 before(async () => {
-  browser = await chromium.launch({ channel: 'msedge' });
+  browser = await chromium.launch({ channel: 'msedge', args: ['--mute-audio'] }); // test browsers stay silent
   page = await browser.newPage({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
   page.on('pageerror', e => errors.push(e.message));
 });
@@ -359,6 +359,58 @@ test('dragging the start handle with the pointer opens a period and leaves the e
   assert.ok(starts.at(-1) < 1990, `a period opened: ${starts.at(-1)}`);
   assert.equal(await page.textContent('#year-big'), `${starts.at(-1)}–1990`);
   assert.match(page.url(), new RegExp(`#y=1990&f=${starts.at(-1)}$`));
+});
+
+// MP-12 (Jude, 17 November 2026: "Every map slider should have 3 small buttons which say "Independent Movement" "Move
+// Together" and "Single Year" when you hover over them"): the three buttons, Move Together moving both handles with the
+// span kept, Single Year one year, and the address's move= read back on a reload; an address without it opens as before.
+test('the movement buttons: Move Together moves both handles with the span kept, Single Year shows one year, the address keeps it', async () => {
+  const state = () => page.evaluate(() => ({ from: +document.querySelector('#from').dataset.value, to: +document.querySelector('#year').dataset.value,
+    pressed: [...document.querySelectorAll('.prp-period-move[aria-pressed="true"]')].map(b => b.dataset.move), hash: location.hash }));
+  await open('#y=1945&f=1938');
+  const buttons = await page.locator('#period .prp-period-move').evaluateAll(bs => bs.map(b => [b.dataset.move, b.getAttribute('aria-label'), b.title]));
+  assert.deepEqual(buttons, [['independent', 'Independent Movement', 'Independent Movement'], ['together', 'Move Together', 'Move Together'], ['single', 'Single Year', 'Single Year']]);
+  assert.deepEqual((await state()).pressed, ['independent']);
+  // Move Together: the end handle dragged three years back by the pointer takes the start along.
+  await page.locator('[data-move="together"]').click();
+  assert.match((await state()).hash, /#y=1945&f=1938&move=together$/);
+  await page.waitForTimeout(800);
+  const at = await page.locator('#year').evaluate(e => {
+    const r = e.getBoundingClientRect(), t = parseFloat(getComputedStyle(e.closest('.prp-period')).getPropertyValue('--prp-period-thumb')) || 16, per = (r.width - t) / Math.max(1, +e.max - +e.min);
+    return { x: r.left + t / 2 + (+e.value - +e.min) * per, y: r.top + r.height / 2, per };
+  });
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  for (let k = 1; k <= 6; k++) await page.mouse.move(at.x - (k / 2) * at.per, at.y);
+  await page.mouse.up();
+  let s = await state();
+  assert.deepEqual([s.from, s.to], [1935, 1942], 'both handles moved three years, the span kept');
+  assert.equal(await page.textContent('#year-big'), '1935–1942');
+  // ‹ moves both one year.
+  await page.locator('#prev').click();
+  s = await state();
+  assert.deepEqual([s.from, s.to], [1934, 1941]);
+  // Single Year: the start on the end's year, one year shown, and the arrow keys move the one year.
+  await page.locator('[data-move="single"]').click();
+  s = await state();
+  assert.deepEqual([s.from, s.to, s.pressed], [1941, 1941, ['single']]);
+  assert.equal(await page.textContent('#year-big'), '1941');
+  assert.match(s.hash, /#y=1941&move=single$/);
+  await page.locator('#year').focus();
+  await page.keyboard.press('ArrowLeft');
+  s = await state();
+  assert.deepEqual([s.from, s.to], [1940, 1940]);
+  // A reload keeps Single and its year; the address without move= opens as before.
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForFunction(() => document.querySelectorAll('path.shape').length > 50, null, { timeout: 30000 });
+  s = await state();
+  assert.deepEqual([s.from, s.to, s.pressed], [1940, 1940, ['single']]);
+  assert.equal(await page.textContent('#year-big'), '1940');
+  await page.goto('about:blank');
+  await open('#y=1945&f=1938');
+  s = await state();
+  assert.deepEqual([s.from, s.to, s.pressed, s.hash], [1938, 1945, ['independent'], '#y=1945&f=1938']);
+  assert.equal(await page.textContent('#year-big'), '1938–1945');
 });
 
 // The period control is a copy of jdpi's: prp-period.js, less its two-line header, and in styles.css the "Period control"

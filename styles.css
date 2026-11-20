@@ -66,6 +66,19 @@ body { margin: 0; }
 .prp-period-btn.play { width: 36px; height: 36px; border-radius: 50%; border-color: var(--prp-primary); background: var(--prp-primary); color: var(--prp-on-primary); font-size: 12px; }
 .prp-period-btn.play:hover { border-color: var(--prp-primary-hover); background: var(--prp-primary-hover); }
 .prp-period-btn:focus-visible { outline: 2px solid var(--prp-focus); outline-offset: 1px; }
+/* The movements (Independent Movement, Move Together, Single Year): three small joined buttons, 24px (26px to touch);
+   the chosen one (aria-pressed) is drawn pressed, with an inset bar under its glyph as well as the accent border. */
+.prp-period-moves { flex: none; display: inline-flex; }
+.prp-period-moves[hidden] { display: none; }
+.prp-period-move { position: relative; display: inline-grid; place-items: center; width: 24px; height: 24px; margin: 0; padding: 0; cursor: pointer;
+  border: 1px solid var(--prp-line-strong); border-radius: 0; background: var(--prp-surface); color: var(--prp-muted); font: inherit; }
+.prp-period-move + .prp-period-move { margin-left: -1px; }
+.prp-period-move:first-child { border-radius: var(--prp-radius-sm) 0 0 var(--prp-radius-sm); }
+.prp-period-move:last-child { border-radius: 0 var(--prp-radius-sm) var(--prp-radius-sm) 0; }
+.prp-period-move:hover { background: var(--prp-surface-3); color: var(--prp-text); }
+.prp-period-move[aria-pressed="true"] { z-index: 1; border-color: var(--prp-accent); background: var(--prp-surface-3); color: var(--prp-text); box-shadow: inset 0 -3px 0 var(--prp-accent); }
+.prp-period-move:focus-visible { z-index: 2; outline: 2px solid var(--prp-focus); outline-offset: 1px; }
+.prp-period-move svg { width: 14px; height: 14px; pointer-events: none; }
 .prp-period-slider { position: relative; flex: 1; min-width: 0; margin-left: 6px; padding: 4px 0 16px; }
 .prp-period-slider.has-strip { padding-top: var(--prp-period-strip); }
 .prp-period-slider:not(.has-strip) > .prp-period-strip { display: none; }
@@ -99,9 +112,12 @@ body { margin: 0; }
 .prp-period-ticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
 .prp-period-ticks span.start { transform: translateX(calc(-1 * var(--prp-period-inset))); }
 .prp-period-ticks span.end { transform: translateX(calc(var(--prp-period-inset) - 100%)); }
-@media (pointer: coarse) { .prp-period { --prp-period-thumb: 22px; } } /* a larger handle to touch */
+@media (pointer: coarse) { .prp-period { --prp-period-thumb: 22px; } .prp-period-move { width: 26px; height: 26px; } } /* a larger handle to touch */
 @media (max-width: 900px) { .prp-period { flex: 1 1 100%; } .prp-period-ticks span.minor { display: none; } }
 @media (max-width: 480px) { .prp-period-ticks span:not(.start, .end, .key) { display: none; } }
+/* On a phone the buttons (‹ ▶ › and the three movements) take the first line and the track a full-width line of its
+   own under them: beside the buttons a 390px phone left the track 40–130px (MP-12, 18 November 2026). */
+@media (max-width: 600px) { .prp-period { flex-wrap: wrap; row-gap: 2px; } .prp-period-slider { flex: 1 1 100%; margin-left: 0; } }
 /* Forced colours (Windows high contrast) drop the track's and the period's backgrounds and draw both handles as the
    same hollow circle, so neither the period nor which end is which could be seen: the track, the period, the strip and
    the handles take system colours instead (the end filled, the start hollow, the ring where they meet). */
@@ -120,6 +136,7 @@ body { margin: 0; }
   .prp-period[data-rest="end"] .prp-period-range.joined input.from::-moz-range-thumb { background: transparent; box-shadow: 0 0 0 2px Canvas, 0 0 0 4px ButtonText; }
   .prp-period-range input[type="range"]:focus-visible::-webkit-slider-thumb { outline-color: Highlight; }
   .prp-period-range input[type="range"]:focus-visible::-moz-range-thumb { outline-color: Highlight; }
+  .prp-period-move[aria-pressed="true"] { forced-color-adjust: none; border-color: Highlight; background: Highlight; color: HighlightText; box-shadow: inset 0 -3px 0 HighlightText; }
 }
 /* End of the copy of design/prp.css's "Period control" section. */
 

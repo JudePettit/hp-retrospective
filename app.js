@@ -547,14 +547,17 @@ function select(gw) {
 }
 function writeHash() {
   const f = PRPPeriod.rules.startParam(period.get());
-  const h = `#y=${state.year}${f != null ? `&f=${f}` : ''}${state.selected ? `&c=${state.selected}` : ''}`;
+  const m = PRPPeriod.rules.movementParam(period.movement()); // MP-12: the movement, written only away from Independent
+  const h = `#y=${state.year}${f != null ? `&f=${f}` : ''}${state.selected ? `&c=${state.selected}` : ''}${m ? `&${PRPPeriod.MOVE_PARAM}=${m}` : ''}`;
   if (location.hash !== h) history.replaceState(null, '', h);
 }
 // MP-03 (15 Nov 2026): on a phone the opening's two handles sit at least about 24 px apart at the track's drawn
 // width, the latest year still at the right handle; on wider screens they open one year apart, as before.
 function openSteps() {
   if (!matchMedia('(max-width: 767px)').matches) return 1;
-  const w = document.getElementById('year')?.getBoundingClientRect().width || $('#period').getBoundingClientRect().width;
+  // The track, not #year: the input's box takes in the thumb, while the track (inset half a thumb at each end) is
+  // exactly the distance the handles travel, whatever sits beside it (the movement buttons, MP-12).
+  const w = document.querySelector('#period .prp-period-track')?.getBoundingClientRect().width || $('#period').getBoundingClientRect().width;
   return PRPPeriod.rules.openSteps(period.get().stops.length, w);
 }
 // An f at or after the year, or unreadable, is a single year; an address with no year at all opens on the last two
@@ -562,7 +565,8 @@ function openSteps() {
 function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
   const y = +p.get('y') || state.data.lastYear; const c = +p.get('c');
-  return { y, f: PRPPeriod.rules.readStart(period.get().stops, p.get('f'), y, 'end', !p.get('y') && !p.get('f'), openSteps()), c: country(c) ? c : null };
+  return { y, f: PRPPeriod.rules.readStart(period.get().stops, p.get('f'), y, 'end', !p.get('y') && !p.get('f'), openSteps()), c: country(c) ? c : null,
+    m: PRPPeriod.rules.readMovement(p.get(PRPPeriod.MOVE_PARAM)) };
 }
 
 function setupSearch() {
@@ -618,15 +622,18 @@ function setupSearch() {
     setupTimeline();
     setupSearch();
     setupTable();
-    const { y, f, c } = readHash();
+    const { y, f, c, m } = readHash();
     state.selected = c;
     state.year = y;
     setupTabs();
+    period.setMovement(m, { silent: true }); // the address's movement first, so its period is placed by that rule
     setPeriod(f, y, { push: false });
     if (c) zoomToCountry(c, [dateFor(state.year)]);
     window.addEventListener('hashchange', () => {
       const h = readHash();
-      if (h.y !== state.year || (h.f ?? h.y) !== state.from) setPeriod(h.f, h.y, { push: false });
+      const moved = h.m !== period.movement();
+      if (moved) period.setMovement(h.m, { silent: true });
+      if (moved || h.y !== state.year || (h.f ?? h.y) !== state.from) setPeriod(h.f, h.y, { push: false });
       if (h.c !== state.selected) select(h.c);
     });
   } catch (err) {

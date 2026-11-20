@@ -27,7 +27,9 @@
      rest,       'first' (the default) or 'end', as above
      labels,     value => text, for the handles' aria-valuetext ('3000 BC', 'July 1940'); default String
      onChange,   p => …, once per change, never from inside itself; p = { from, to, fromIndex, toIndex, atRest, single,
-                 playing, source, stops }, source 'input' | 'track' | 'step' | 'play' | 'set'
+                 playing, source, stops, movement }, source 'input' | 'track' | 'step' | 'play' | 'set' | 'movement'
+                 (movement: 'independent' | 'together' | 'single', Movements below)
+     movement, movements   the page's default movement, and false for no movement buttons (Movements below)
      play,       false, or { interval: ms | () => ms (read when play starts), label: 'Play through history' }: draws ‹ ▶ ›
      steps,      draws ‹ › without ▶ (default: with play)
      ticks,      [{ at: value, text, kind }], kind 'key' | 'minor' (and 'start' | 'end', also given to a tick within 2% of
@@ -63,7 +65,48 @@
    native ones (arrows, Page Up and Down, Home, End) with the same push and pull; the control installs no page-wide
    keys. When the stops are consecutive whole numbers (every year 1926–2025) the inputs' values are the stops
    themselves, otherwise stop indices, so each page's inputs keep the values its code and tests use; each input also
-   carries data-value, the value it stands for. */
+   carries data-value, the value it stands for.
+
+   Movements (MP-12; Jude, 17 November 2026: "Every map slider should have 3 small buttons which say "Independent
+   Movement" "Move Together" and "Single Year" when you hover over them"). Three small buttons after ‹ ▶ › (before the
+   track where a page has none), a group named "Movement", each with its name as its tooltip (title) and its accessible
+   name; the chosen one is aria-pressed="true" and drawn pressed (an inset bar under it, not colour alone). Exactly one
+   is chosen; the state's `m`, and p.movement:
+     'independent'  Independent Movement: each handle moves alone, by every rule above (push and pull; on a snapshot
+                    page a single time travels as one and only the start opens a period). The default: a page that
+                    never touches the buttons behaves exactly as before, with this button shown as chosen.
+     'together'     Move Together: a drag or a key on either handle, a track click (the nearer handle lands there), ‹ ›
+                    and play move both and keep the span between them, at the track's ends too (the pair stops there,
+                    its span kept). ‹ › and each tick of play move both one stop; play from the last stop begins again
+                    with the start on the first stop, and stops when the end reaches the last.
+     'single'       Single Year: the two handles sit on one stop (the end's: choosing it brings the start onto the end)
+                    and move as one, by drag, key, track, ‹ › and play (play travels, as a snapshot page's single
+                    time: from the last stop it begins again at the first). set() and update() put the start on the
+                    end. On stops of months or days the button reads "Single Month" or "Single Day" (names.single
+                    overrides it): "Single Year" there would be plainly false.
+   How they fit `rest`: Independent is the control as it was. Together keeps j − i, whatever the rest; a span of 0 is a
+   single time moving as one. Single keeps i = j: on a snapshot page that is the start at rest (one time, no start
+   parameter); on an up-to page it is a period of one stop (a start parameter equal to the end), except on the first
+   stop. Choosing another movement keeps the period (Single first brings the start onto the end); leaving Single keeps
+   the one time, which then moves by that movement's rules.
+     movement,   option: the page's default and opening movement ('independent' unless given)
+     movements,  option: false draws no buttons. A page may switch them off only with a comment saying why; a control
+                 of one stop hides them by itself (nothing to move), and shows them again when update() gives it more.
+     ids, names, titles also take independent, together, single (and names.movements, the group's name)
+   period.movement()                 the chosen movement
+   period.setMovement(m, { silent }) chooses one (anything else: the page's default); stops play if it changes; calls
+                                     onChange (source 'movement') unless silent, even when the period is unchanged,
+                                     so a page writes it to its address. Returns p. A button press does the same.
+                                     It keeps a value between stops (exact) as it is. Like set(), it is silent
+                                     when called from inside onChange (a page's own handler then reads get()).
+                                     Move Together over the whole track does not play (nowhere to go).
+   In Single Year the start's aria-valuetext adds "(the same as the end)" on every page, as on a snapshot page.
+   p.movement is in every onChange and get(); a page's other fields and sources are as before.
+   The address: every page keeps the movement under one parameter, PRPPeriod.MOVE_PARAM ('move', values together,
+   single, independent), written only when it is not the page's default (rules.movementParam(m, default) gives null
+   then) and read back on load and on hashchange with rules.readMovement(raw, default) (absent or unknown: the default),
+   so an old address opens exactly as before. Kino and saved views (design/vm-recipe.js) drive set(), which keeps the
+   chosen movement's rule; a page they open is at its default unless its address names another. */
 (function () {
   const root = typeof window !== 'undefined' ? window : globalThis;
   const SVG = 'http://www.w3.org/2000/svg';
@@ -83,13 +126,29 @@
     return lo;
   }
   const clampIndex = (k, n) => Math.max(0, Math.min(n - 1, Math.round(+k) || 0));
-  // s = { i, j, n, rest }: the start's and end's stop indices, the number of stops, and where the start rests.
+  // s = { i, j, n, rest, m }: the start's and end's stop indices, the number of stops, where the start rests, and the
+  // movement (MOVES; left out, Independent).
+  const MOVES = ['independent', 'together', 'single'];
+  const asMove = (m, dflt = 'independent') => (MOVES.includes(m) ? m : MOVES.includes(dflt) ? dflt : 'independent');
   const atRest = s => (s.rest === 'end' ? s.i === s.j : s.i === 0);
   const travels = s => s.rest === 'end' && s.i === s.j; // a single time on a snapshot page moves as one
-  const startTo = (s, k) => { k = clampIndex(k, s.n); return { ...s, i: k, j: Math.max(s.j, k) }; };
-  const endTo = (s, k) => { k = clampIndex(k, s.n); return travels(s) ? { ...s, i: k, j: k } : { ...s, i: Math.min(s.i, k), j: k }; };
-  const trackTo = (s, k) => { k = clampIndex(k, s.n); return travels(s) ? { ...s, i: k, j: k } : Math.abs(k - s.i) < Math.abs(k - s.j) ? startTo(s, k) : endTo(s, k); };
-  const trackMoves = (s, k) => (!travels(s) && Math.abs(clampIndex(k, s.n) - s.i) < Math.abs(clampIndex(k, s.n) - s.j) ? 'from' : 'to');
+  const asOne = s => s.m === 'single' || travels(s);   // both handles go to the one stop
+  // Move Together: both by d stops, the span kept, the pair stopping at either end of the track.
+  const shift = (s, d) => { const span = s.j - s.i, i = Math.max(0, Math.min(s.n - 1 - span, s.i + Math.round(d))); return { ...s, i, j: i + span }; };
+  // Single Year: the start brought onto the end.
+  const collapse = s => ({ ...s, i: s.j });
+  const startTo = (s, k) => {
+    k = clampIndex(k, s.n);
+    if (s.m === 'together') return shift(s, k - s.i);
+    return s.m === 'single' ? { ...s, i: k, j: k } : { ...s, i: k, j: Math.max(s.j, k) };
+  };
+  const endTo = (s, k) => {
+    k = clampIndex(k, s.n);
+    if (s.m === 'together') return shift(s, k - s.j);
+    return asOne(s) ? { ...s, i: k, j: k } : { ...s, i: Math.min(s.i, k), j: k };
+  };
+  const trackMoves = (s, k) => (!asOne(s) && Math.abs(clampIndex(k, s.n) - s.i) < Math.abs(clampIndex(k, s.n) - s.j) ? 'from' : 'to');
+  const trackTo = (s, k) => { k = clampIndex(k, s.n); return asOne(s) ? { ...s, i: k, j: k } : trackMoves(s, k) === 'from' ? startTo(s, k) : endTo(s, k); };
   // ‹ › and a page's keys; between: the end's value lies between stops, so a step back first goes to its own stop.
   const stepBy = (s, d, between = false) => endTo(s, d < 0 && between ? s.j : s.j + d);
   // Play: travel (a single time on a snapshot page moves as one) or grow (the end runs on from the start). The mode is
@@ -98,9 +157,11 @@
   // from the first, as one.
   // open: how many stops apart the opening period's handles are (1, or more on a phone: openSteps, below).
   const opening = (s, open = 1) => s.rest === 'end' && s.j === s.n - 1 && s.j - s.i === Math.max(1, open);
-  const playMode = (s, open = 1) => (travels(s) || opening(s, open) ? 'travel' : 'grow');
-  const playStart = (s, mode) => (s.j < s.n - 1 ? s : mode === 'travel' ? { ...s, i: 0, j: 0 } : { ...s, j: s.i });
-  const playTick = (s, mode) => (s.j >= s.n - 1 ? null : mode === 'travel' ? { ...s, i: s.j + 1, j: s.j + 1 } : { ...s, j: s.j + 1 });
+  // Move Together plays as 'shift' (both one stop a tick, the span kept; from the last stop, again from the first), and
+  // Single Year as 'travel'.
+  const playMode = (s, open = 1) => (s.m === 'together' ? 'shift' : s.m === 'single' || travels(s) || opening(s, open) ? 'travel' : 'grow');
+  const playStart = (s, mode) => (s.j < s.n - 1 ? s : mode === 'travel' ? { ...s, i: 0, j: 0 } : mode === 'shift' ? shift(s, -s.i) : { ...s, j: s.i });
+  const playTick = (s, mode) => (s.j >= s.n - 1 ? null : mode === 'travel' ? { ...s, i: s.j + 1, j: s.j + 1 } : mode === 'shift' ? { ...s, i: s.i + 1, j: s.j + 1 } : { ...s, j: s.j + 1 });
   // Which input is in front, and whether the handles sit together.
   const layering = s => ({ topFrom: s.rest === 'end' ? s.i >= s.j : s.i >= s.j && s.j > 0, joined: s.i === s.j });
   const consecutive = stops => stops.length > 1 && stops.every((v, k) => Number.isInteger(v) && (k === 0 || v === stops[k - 1] + 1));
@@ -124,13 +185,27 @@
     if (rest === 'end' ? to != null && cmp(f, asStop(stops, to)) >= 0 : indexOf(stops, f) === 0) return null;
     return f;
   }
+  // The movement in the address: written only away from the page's default; read back as the default when absent or
+  // unknown, so an old address opens as before.
+  const MOVE_PARAM = 'move';
+  const movementParam = (m, dflt = 'independent') => (asMove(m, dflt) === asMove(dflt) ? null : asMove(m, dflt));
+  const readMovement = (raw, dflt = 'independent') => asMove(raw == null ? null : String(raw).trim().toLowerCase(), dflt);
+  // The third button's name: one stop of years, months ('YYYY-MM') or days ('YYYY-MM-DD').
+  const singleName = stops => {
+    const v = stops && stops.length ? stops[0] : null;
+    if (typeof v === 'string' && /\d-\d{2}-\d{2}$/.test(v)) return 'Single Day';
+    if (typeof v === 'string' && /\d-\d{2}$/.test(v)) return 'Single Month';
+    return 'Single Year';
+  };
 
   /* ---------- the control ---------- */
   function mount(el, opts = {}) {
     const doc = el.ownerDocument;
     const o = { rest: 'first', labels: String, play: false, exact: false, ids: {}, ...opts };
-    const names = { group: 'Period', from: 'Start of the period', to: 'End of the period', prev: 'Step back in time', next: 'Step forward in time', ...o.names };
-    const titles = { from: names.from, to: names.to, prev: names.prev, next: names.next, play: 'Play or pause', ...o.titles };
+    const names = { group: 'Period', from: 'Start of the period', to: 'End of the period', prev: 'Step back in time', next: 'Step forward in time',
+      movements: 'Movement', independent: 'Independent Movement', together: 'Move Together', ...o.names };
+    const titles = { from: names.from, to: names.to, prev: names.prev, next: names.next, play: 'Play or pause', independent: names.independent, together: names.together, ...o.titles };
+    const home = asMove(o.movement); // the page's default movement
     const label = v => (v == null ? '' : String(o.labels(v)));
     const make = (tag, cls, attrs = {}) => {
       const e = doc.createElement(tag);
@@ -138,7 +213,7 @@
       for (const [k, v] of Object.entries(attrs)) if (v != null) e.setAttribute(k, v);
       return e;
     };
-    let stops = [], vmode = false, s = { i: 0, j: 0, n: 1, rest: o.rest === 'end' ? 'end' : 'first' }, fromV = null, toV = null;
+    let stops = [], vmode = false, s = { i: 0, j: 0, n: 1, rest: o.rest === 'end' ? 'end' : 'first', m: home }, fromV = null, toV = null;
     let timer = null, mode = 'grow', busy = false, stripData = o.strip ?? null, ticksList = o.ticks || [], raf = 0;
 
     el.classList.add('prp-period');
@@ -154,6 +229,44 @@
     const prevB = withSteps ? button('prev', '‹', names.prev, titles.prev) : null;
     const playB = o.play ? button('play', '▶', o.play.label || 'Play', titles.play, ' play') : null;
     const nextB = withSteps ? button('next', '›', names.next, titles.next) : null;
+    // The movements: three small buttons, each with a drawn glyph (16 × 16, in currentColor) and its name.
+    const ICONS = {
+      independent: [['circle', { cx: 3.5, cy: 8, r: 2.5, fill: 'none', 'stroke-width': 1.5 }], ['circle', { cx: 12.5, cy: 8, r: 2.5 }]],
+      together: [['rect', { x: 4, y: 6.75, width: 8, height: 2.5, rx: 1 }], ['circle', { cx: 3.5, cy: 8, r: 2.5, fill: 'none', 'stroke-width': 1.5 }], ['circle', { cx: 12.5, cy: 8, r: 2.5 }]],
+      single: [['circle', { cx: 8, cy: 8, r: 5.25, fill: 'none', 'stroke-width': 1.5 }], ['circle', { cx: 8, cy: 8, r: 2.75 }]],
+    };
+    const movesBox = o.movements === false ? null : make('div', 'prp-period-moves', { role: 'group', 'aria-label': names.movements });
+    const moveB = {};
+    if (movesBox) {
+      for (const m of MOVES) {
+        const b = make('button', 'prp-period-move', { type: 'button', 'data-move': m, 'aria-pressed': 'false', id: o.ids[m] });
+        const svg = doc.createElementNS(SVG, 'svg');
+        for (const [k, v] of [['viewBox', '0 0 16 16'], ['aria-hidden', 'true'], ['focusable', 'false'], ['fill', 'currentColor'], ['stroke', 'currentColor']]) svg.setAttribute(k, v);
+        for (const [tag, a] of ICONS[m]) {
+          const shape = doc.createElementNS(SVG, tag);
+          if (!('stroke-width' in a)) shape.setAttribute('stroke', 'none');
+          for (const [k, v] of Object.entries(a)) shape.setAttribute(k, String(v));
+          svg.append(shape);
+        }
+        b.append(svg);
+        b.addEventListener('click', () => setMovement(m));
+        movesBox.append(b); moveB[m] = b;
+      }
+      el.append(movesBox);
+    }
+    // The buttons' names (the third follows the stops: Single Year, Month or Day) and which one is chosen.
+    function paintMoves() {
+      if (!movesBox) return;
+      const single = names.single || singleName(stops);
+      for (const m of MOVES) {
+        const name = m === 'single' ? single : names[m], b = moveB[m];
+        b.setAttribute('aria-label', name);
+        b.setAttribute('title', (m === 'single' ? o.titles?.single : titles[m]) || name);
+        b.setAttribute('aria-pressed', String(m === s.m));
+      }
+      movesBox.hidden = stops.length === 1; // one stop: nothing to move
+      el.dataset.movement = s.m;
+    }
     const slider = make('div', 'prp-period-slider');
     const strip = doc.createElementNS(SVG, 'svg');
     for (const [k, v] of [['class', 'prp-period-strip'], ['aria-hidden', 'true'], ['focusable', 'false'], ['preserveAspectRatio', 'none']]) strip.setAttribute(k, v);
@@ -167,7 +280,7 @@
     slider.append(strip, range, ticksBox);
     el.append(slider);
 
-    const get = (source = 'get') => ({ from: fromV, to: toV, fromIndex: s.i, toIndex: s.j, atRest: atRest(s), single: fromV != null && cmp(fromV, toV) === 0, playing: !!timer, source, stops });
+    const get = (source = 'get') => ({ from: fromV, to: toV, fromIndex: s.i, toIndex: s.j, atRest: atRest(s), single: fromV != null && cmp(fromV, toV) === 0, playing: !!timer, source, stops, movement: s.m });
     function setStops(list) {
       stops = [...(list || [])];
       s = { ...s, n: Math.max(1, stops.length) };
@@ -185,6 +298,7 @@
       let f = asStop(stops, from), i;
       if (f == null) { i = s.rest === 'end' ? j : 0; f = s.rest === 'end' ? t : first; }
       else { i = indexOf(stops, f); f = o.exact ? clampV(f) : stops[i]; if (cmp(f, t) > 0) { f = t; i = j; } }
+      if (s.m === 'single') { i = j; f = t; } // Single Year: the start on the end
       return { nx: { ...s, i, j }, f, t };
     }
     function sync() {
@@ -193,9 +307,10 @@
       fromI.value = String(vmode ? stops[s.i] : s.i); toI.value = String(vmode ? stops[s.j] : s.j);
       const { topFrom, joined } = layering(s);
       range.classList.toggle('top-from', topFrom); range.classList.toggle('joined', joined);
-      fromI.setAttribute('aria-valuetext', s.rest === 'end' && joined && stops.length ? `${label(fromV)} (the same as the end)` : label(fromV));
+      fromI.setAttribute('aria-valuetext', (s.rest === 'end' || s.m === 'single') && joined && stops.length ? `${label(fromV)} (the same as the end)` : label(fromV));
       toI.setAttribute('aria-valuetext', label(toV));
       fromI.dataset.value = fromV == null ? '' : String(fromV); toI.dataset.value = toV == null ? '' : String(toV);
+      paintMoves();
       paintStrip();
     }
     function emit(source) {
@@ -209,11 +324,26 @@
       if (!stops.length) return false;
       let f = moved === 'from' || nx.i !== s.i ? stops[nx.i] : fromV, t = moved === 'to' || nx.j !== s.j ? stops[nx.j] : toV;
       if (cmp(f, t) > 0) { if (moved === 'from') t = f; else f = t; }
-      const changed = nx.i !== s.i || nx.j !== s.j || cmp(f, fromV) !== 0 || cmp(t, toV) !== 0;
+      if (nx.m === 'single') { if (moved === 'from') t = f; else f = t; } // one time: both carry the same value
+      const changed = nx.i !== s.i || nx.j !== s.j || cmp(f, fromV) !== 0 || cmp(t, toV) !== 0 || nx.m !== s.m;
       s = nx; fromV = f; toV = t;
       sync();
       if (changed) emit(source);
       return changed;
+    }
+    // A movement chosen by its button (source 'movement') or by the page (from its address, often silent). Single
+    // brings the start onto the end; the others keep the period.
+    function setMovement(m, { silent = false } = {}) {
+      m = asMove(m, home);
+      if (m === s.m) return get('movement');
+      stop();
+      const nx = m === 'single' ? collapse({ ...s, m }) : { ...s, m };
+      if (silent || !stops.length) { // no stops yet: nothing to report until the data loads
+        s = nx; if (m === 'single' && stops.length) fromV = toV;
+        sync();
+      } else commit(nx, 'movement', null); // always a change (the movement), so always reported; moved null: a value
+      // between stops (exact) is kept, as the silent path keeps it, so a press and a reload give the same period
+      return get('movement');
     }
     function set(from, to, { silent = false } = {}) {
       const { nx, f, t } = place(from, to === undefined ? toV : to);
@@ -263,6 +393,7 @@
     function play() {
       if (timer || !o.play || stops.length < 2) return;
       mode = playMode(s, typeof o.open === 'function' ? +o.open() || 1 : +o.open || 1);
+      if (mode === 'shift' && s.j - s.i >= s.n - 1) return; // Move Together over the whole track: nowhere to go
       commit(playStart(s, mode), 'play', 'to');
       setButton(true);
       const every = typeof o.play.interval === 'function' ? +o.play.interval() : +o.play.interval;
@@ -304,11 +435,13 @@
     return {
       el, inputs: { from: fromI, to: toI }, set, get: () => get('get'), update, step, play, stop, toggle,
       strip(d) { stripData = d ?? null; drawStrip(); paintStrip(); },
+      movement: () => s.m, setMovement, movementButtons: moveB,
     };
   }
 
   root.PRPPeriod = {
-    mount,
-    rules: { indexOf, atRest, travels, startTo, endTo, trackTo, trackMoves, stepBy, playMode, playStart, playTick, layering, consecutive, fillOf, tickAt, barHeight, startParam, openStart, openSteps, readStart, compare: cmp },
+    mount, MOVES, MOVE_PARAM,
+    rules: { indexOf, atRest, travels, startTo, endTo, trackTo, trackMoves, stepBy, playMode, playStart, playTick, layering, consecutive, fillOf, tickAt, barHeight, startParam, openStart, openSteps, readStart, compare: cmp,
+      shift, collapse, asMove, movementParam, readMovement, singleName },
   };
 })();

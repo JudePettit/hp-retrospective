@@ -176,16 +176,20 @@ export async function statements() {
       BIND("P580" AS ?prop)
       ?item p:P31 ?st . ?st ps:P31 wd:Q3624078 ; pqv:P580 ?node ; wikibase:rank ?rank . ?node wikibase:timeValue ?time ; wikibase:timePrecision ?prec .
     }`)];
-  const out = {}, seen = new Set();
+  const out = {}, seen = new Map();
   for (const b of rows) {
     const item = id(b.item.value), prop = b.prop.value, st = b.st.value;
-    if (seen.has(st)) continue; // one row per statement (a second end cause adds nothing the text uses)
-    seen.add(st);
+    const cause = b.causeLabel?.value || null;
+    // One record per statement. A statement with two end causes comes back as two rows in no set order, and an event's
+    // text names the cause: the first by its label is kept, whichever row arrives first (second review, 21 November 2026).
+    if (seen.has(st)) { const kept = seen.get(st); if (cause && (!kept.cause || cause < kept.cause)) kept.cause = cause; continue; }
     const t = b.time.value;
-    ((out[item] ||= {})[prop] ||= []).push({
+    const record = {
       date: t.startsWith('-') ? '0000-01-01' : t.slice(0, 10), precision: PRECISION[b.prec.value] || 'coarser',
-      rank: RANK[id(b.rank.value).replace(/^.*#/, '')] || 'normal', cause: b.causeLabel?.value || null
-    });
+      rank: RANK[id(b.rank.value).replace(/^.*#/, '')] || 'normal', cause
+    };
+    seen.set(st, record);
+    ((out[item] ||= {})[prop] ||= []).push(record);
   }
   return out;
 }

@@ -151,8 +151,12 @@ async function wikidataOffices() {
   // terms two ends each: Mark Rutte's (2 July 2024 and "2024"), Cemal Gürsel's (2 February and 28 March 1966) and
   // Turgut Özal's (16 and 17 April 1993). The build keeps 2 July 2024, 28 March 1966 and 17 April 1993.
   const plain = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+  // A start given to the day comes before the same start given only to the month or the year, so the report that the
+  // year-only filter below would drop never displaces a day-dated one (second review, 21 November 2026).
+  const coarseness = p => (!p ? 0 : p === 'month' ? 1 : p === 'year' ? 2 : 3);
   const fixed = (a, b) => plain(a.start, b.start) || plain(b.office, a.office) || plain(a.full || '', b.full || '') || plain(a.qid, b.qid)
-    || plain(a.end ? 0 : 1, b.end ? 0 : 1) || plain(a.endPrecision ? 1 : 0, b.endPrecision ? 1 : 0) || plain(b.end || '', a.end || '') || plain(a.url || '', b.url || '');
+    || plain(coarseness(a.startPrecision), coarseness(b.startPrecision))
+    || plain(a.end ? 0 : 1, b.end ? 0 : 1) || plain(coarseness(a.endPrecision), coarseness(b.endPrecision)) || plain(b.end || '', a.end || '') || plain(a.url || '', b.url || '');
   for (const key of Object.keys(out)) {
     const seen = new Set();
     const list = out[key].sort(fixed).filter(x => { const k = `${x.office}|${x.qid}|${x.start}`; if (seen.has(k)) return false; seen.add(k); return true; });
@@ -255,6 +259,10 @@ async function elections() {
       (out[key] ||= []).push({ date: day(val(b, 'date')), type: /referendum/i.test(label) ? 'referendum' : 'election', text: label, url: val(b, 'article') });
     }
   }
+  // Votes held on one day are listed by title, not in the order Wikidata happened to return them (the later sorts are
+  // stable and keep this order among events of one day and kind).
+  const byText = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+  for (const list of Object.values(out)) list.sort((a, b) => byText(a.date, b.date) || byText(a.text, b.text) || byText(a.url || '', b.url || ''));
   return out;
 }
 

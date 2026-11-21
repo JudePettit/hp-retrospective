@@ -666,6 +666,19 @@ test('people who took office on one day are listed in a fixed order, and one ter
   assert.deepEqual(term('Q55', 'Mark Rutte', '2010-10-14').map(o => [o.end, o.endPrecision]), [['2024-07-02', undefined]]);
   assert.deepEqual(term('Q43', 'Cemal Gürsel', '1960-05-27').map(o => o.end), ['1966-03-28']);
   assert.deepEqual(term('Q43', 'Turgut Özal', '1989-11-09').map(o => o.end), ['1993-04-17']);
+  // The second review of that change found three more picks that rested on the order of Wikidata's answer. Votes held
+  // on one day are listed by title; a leader whose two offices carry the same dates is named by the office whose
+  // item has the lower number.
+  assert.deepEqual(data.countries.Q30.events.filter(e => e.date === '2024-11-05').map(e => e.text),
+    ['2024 United States House of Representatives elections', '2024 United States presidential election']);
+  for (const c of Object.values(data.countries)) {
+    const votes = c.events.filter(e => e.type === 'election' || e.type === 'referendum');
+    for (let i = 1; i < votes.length; i++) if (votes[i - 1].date === votes[i].date && votes[i - 1].type === votes[i].type) assert.ok(votes[i - 1].text <= votes[i].text, `${c.name} ${votes[i].date}: ${votes[i - 1].text} before ${votes[i].text}`);
+  }
+  const position = (key, full) => data.countries[key].leaders.filter(l => l.full === full).map(l => l.position);
+  for (const king of ['Saud of Saudi Arabia', 'Faisal of Saudi Arabia', 'Khalid of Saudi Arabia']) assert.deepEqual(position('Q851', king), ['King of Saudi Arabia'], king);
+  assert.deepEqual(position('Q17', 'Masayoshi Ito'), ['Prime Minister of Japan']);
+  assert.deepEqual(position('Q191077', 'Svetozar Marović'), ['President of Serbia and Montenegro']);
 });
 
 // RT-04's second readers (16 November 2026) checked the lists against other sources; each correction they found real is

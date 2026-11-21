@@ -206,7 +206,14 @@ function candidates(person, allowed) {
 }
 const diff = (a, b) => (a && b ? day(a) - day(b) : a || b ? Infinity : 0);
 const cost = (run, l) => Math.abs(diff(run.start.date, l.start)) + Math.abs(diff(run.end?.date || null, l.end));
-const nearest = l => (x, y) => { const a = cost(x, l), b = cost(y, l); return (a === b ? 0 : a < b ? -1 : 1) || x.offices.size - y.offices.size; };
+const nearest = l => (x, y) => { const a = cost(x, l), b = cost(y, l); return (a === b ? 0 : a < b ? -1 : 1) || x.offices.size - y.offices.size
+  // Two runs equally near and of as many offices: the earlier start, then the office whose item has the lower number
+  // (as a rule the office itself and not a later variant of it), so the pick never rests on the order of the person's
+  // statements (second review, 21 November 2026). On that day it decided the office named for five leaders whose two
+  // offices carry the same dates: Saud, Faisal and Khalid of Saudi Arabia (King, not Prime Minister), Svetozar Marović
+  // (President of Serbia and Montenegro) and Masayoshi Ito (Prime Minister of Japan; Wikidata also has him as Acting
+  // Prime Minister for the same days).
+  || x.start.date.localeCompare(y.start.date) || Number(String(x.first).slice(1)) - Number(String(y.first).slice(1)); };
 // A name compared with another, with accents, brackets, punctuation and case set aside.
 const plain = s => String(s || '').normalize('NFD').replace(/\p{M}/gu, '').replace(/\([^)]*\)/g, ' ').replace(/[^\p{L}\p{N}]+/gu, ' ').trim().toLowerCase();
 

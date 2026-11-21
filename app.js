@@ -22,7 +22,10 @@ let svg, g, projection, path, zoom;
 
 /* ---------------------------------------------------------------- data helpers */
 const dateFor = y => (y >= new Date().getUTCFullYear() ? TODAY : `${y}-12-31`);
-const country = key => state.data.countries[key];
+// A key is looked up among the object's own entries only: an address's #c=constructor or #c=__proto__ names no state
+// (review X1, 21 November 2026), and opens the year with none selected, as an unknown key always has.
+const own = (o, k) => (o != null && Object.hasOwn(o, k) ? o[k] : undefined);
+const country = key => own(state.data.countries, key);
 // Cliopatria's rows are by the year and end in 2024 (bordersTo): a later year is drawn on 2024's rows.
 const held = y => Math.min(y, state.data.bordersTo);
 const rowsIn = y => state.features.filter(f => f.properties.f <= held(y) && held(y) <= f.properties.t);
@@ -64,7 +67,8 @@ function borderChanges(key, a, b = a) {
   return eventsIn(key, a, b).filter(e => e.type === 'border').map(e => +e.date.slice(0, 4)).filter((y, i, l) => y > a && l.indexOf(y) === i).sort((p, q) => p - q);
 }
 // The most significant thing that happened to a state in the years shown: an irregular seizure of power, else a new
-// leader, else a change of borders.
+// leader, else a year in which its border in Cliopatria differs from the year before's (which may be a redrawing of
+// Cliopatria's rows, #border-limit, so every label says the border differs, never that it changed: review X3).
 function statusFor(key, a, b = a) {
   if (!country(key)) return 'none';
   const ev = eventsIn(key, a, b);
@@ -74,7 +78,8 @@ function statusFor(key, a, b = a) {
   return 'steady';
 }
 const FILL = { irregular: 'var(--c-irregular)', change: 'var(--c-change)', border: 'var(--c-border)', steady: 'var(--c-steady)' };
-const STATUS_LABEL = { irregular: 'Irregular seizure of power', change: 'New leader', border: 'Border change', steady: 'No change' };
+const STATUS_LABEL = { irregular: 'Irregular seizure of power', change: 'New leader', border: 'Cliopatria’s border differs', steady: 'No change' };
+const poss = n => (/s$/.test(n) ? `${n}’` : `${n}’s`); // "United States’ border", "Germany’s border"
 const fmt = d => {
   if (!d) return 'present';
   const [y, m, dd] = d.split('-').map(Number);
@@ -103,23 +108,35 @@ function statesOn(date) {
 // covered but has no row that year (San Marino and Liechtenstein in every year, Poland from 1944 to 1952…) is named:
 // VM cannot place it on a free border. The rest were not states then: before (not yet), after (no longer), or between
 // two spells of independence (the Baltic states, 1940–91).
+// The covered states VM cannot place on a free border in year y (covered then, but no row of Cliopatria's stands for
+// them), and the one sentence that names them: in the panel's count, in a state's own panel, and beside the map
+// (#unplaced), which keeps them named whether or not a state is selected (review X2, 21 November 2026).
+function unplacedIn(y) {
+  const date = dateFor(y), counted = new Set(statesOn(date).map(s => s.key));
+  return Object.keys(state.data.countries).filter(key => !counted.has(key) && coveredOn(key, date)).map(key => nameOf(key, date));
+}
+const cannotPlace = (names, y) => `VM cannot place ${andList(names)} on a free border for ${y}`;
+function renderUnplaced(y) {
+  const names = unplacedIn(y), box = $('#unplaced');
+  box.textContent = names.length ? `${cannotPlace(names, y)}.` : '';
+  box.hidden = !names.length;
+}
 function coverageNote(y) {
   const date = dateFor(y), now = date === TODAY, when = now ? 'today' : `at the end of ${y}`;
   const all = Object.keys(state.data.countries), total = all.length;
   const counted = new Set(statesOn(date).map(s => s.key));
-  const later = [], earlier = [], between = [], unplaced = [];
+  const later = [], earlier = [], between = [], unplaced = unplacedIn(y);
   for (const key of all) {
-    if (counted.has(key)) continue;
+    if (counted.has(key) || coveredOn(key, date)) continue;
     const spans = country(key).spans || [];
-    if (coveredOn(key, date)) unplaced.push(nameOf(key, date));
-    else if (spans.every(([s]) => s > date)) later.push(key);
+    if (spans.every(([s]) => s > date)) later.push(key);
     else if (spans.every(([, e]) => e && e < date)) earlier.push(key);
     else between.push(key);
   }
   const n = counted.size, m = later.length + earlier.length + between.length, k = unplaced.length;
   if (n === total) return `All ${total} countries covered over the years are on the map ${when}.`;
   let out = `${n} of the ${total} countries covered over the years are on the map ${when}.`;
-  if (k) out += ` ${k} ${k === 1 ? 'is' : 'are'} covered in ${y}, but VM cannot place ${k === 1 ? 'it' : 'them'} on a free border for ${y}: ${andList(unplaced)}.`;
+  if (k) out += ` ${k} ${k === 1 ? 'is' : 'are'} covered in ${y} but not drawn: ${cannotPlace(unplaced, y)}.`;
   if (m) {
     const verb = now ? (m === 1 ? 'is' : 'are') : (m === 1 ? 'was' : 'were'), what = m === 1 ? 'an independent state' : 'independent states';
     const kinds = [[later, 'not yet'], [earlier, 'no longer'], [between, 'between two spells of independence']].filter(([l]) => l.length);
@@ -185,6 +202,7 @@ function renderMap(y = state.year) {
   const on = d => key(d) && key(d) === state.selected;
   const shapes = rowsIn(y).sort((p, q) => on(p) - on(q) || q.properties.a - p.properties.a);
   const tip = $('#tooltip');
+  renderUnplaced(y); // the covered states this map does not draw, for the year it draws
   g.selectAll('path.shape')
     .data(shapes, d => d.properties.id)
     .join('path')
@@ -223,7 +241,7 @@ function renderPanel() {
         <div class="prp-kpi"><span>Leader changes</span><b>${count('leader', 'coup')}</b></div>
         <div class="prp-kpi"><span>Irregular seizures</span><b>${count('coup')}</b></div>
         <div class="prp-kpi"><span>Elections, referendums</span><b>${count('election', 'referendum')}</b></div>
-        <div class="prp-kpi"><span>Border changes</span><b>${count('border')}</b></div>
+        <div class="prp-kpi"><span>Borders that differ in Cliopatria</span><b>${count('border')}</b></div>
       </div>
       <p class="note">${one ? 'Select a country to see who was in charge and its key events. Drag the slider or press ▶ to move through the years; drag its hollow start handle back to cover a period of years.' : `Everything recorded from ${a} to ${y}. Select a country to see who was in charge and its key events; bring the hollow start handle back onto the end for a single year.`}</p>
       <h3>Key events ${one ? `in ${y}` : when}${all.length > 120 ? ` · the first 120 of ${all.length}` : ''}</h3>
@@ -251,7 +269,7 @@ function renderPanel() {
 
   panel.innerHTML = `<button class="close" type="button" id="close" aria-label="Close">✕</button>
     <h2>${esc(name)}</h2>
-    <p class="sub">${placed ? when : coveredOn(key, date) ? `${when} · VM cannot place ${esc(name)} on a free border for ${y}, so the map does not draw it` : `Not an independent state at the end of ${y}`}</p>
+    <p class="sub">${placed ? when : coveredOn(key, date) ? `${when} · ${esc(cannotPlace([name], y))}, so the map does not draw it` : `Not an independent state at the end of ${y}`}</p>
     <h3>Political overview of ${when}</h3>
     <p class="overview">${esc(overviewText(name, a, y, leaders, offices, events, [...ruling.values()]))}</p>
     <div id="wiki-events" class="wiki-events">${page ? '<p class="empty">Loading events from Wikipedia…</p>' : pages.length ? `<p class="note">Wikipedia, year by year: ${pages.map(p => `<a href="${wiki(p)}" target="_blank" rel="noopener">${esc(p.slice(0, 4))}</a>`).join(' · ')}</p>` : ''}</div>
@@ -268,11 +286,11 @@ function renderPanel() {
         ${partyChips(o, a, y) ? `<div class="parties">${partyChips(o, a, y)}</div>` : ''}</div>`).join('')}` : ''}
     <h3>Key events ${one ? `in ${y}` : when}</h3>
     ${events.length ? `<ul class="events">${events.map(e => eventItem(e)).join('')}</ul>` : `<p class="empty">No recorded events ${one ? 'this year' : 'in these years'}.</p>`}
-    ${changedInYear ? `<h3>Border changes in ${y}</h3>
-      <p class="note">Cliopatria gives borders by the year, so VM cannot show when within ${y} they changed: the map shows ${esc(/s$/.test(name) ? `${name}’` : `${name}’s`)} border for ${y}, which differs from ${y - 1}’s.</p>` : ''}
-    ${changes.length ? `<h3>Border changes ${when}</h3>
+    ${changedInYear ? `<h3>Cliopatria’s border in ${y}</h3>
+      <p class="note">Cliopatria gives borders by the year: the map shows ${esc(poss(name))} border for ${y}, which differs in Cliopatria from ${y - 1}’s by more than 1% of its area. That may be a redrawing of Cliopatria’s rows rather than a change of border, and a change within ${y} cannot be shown.</p>` : ''}
+    ${changes.length ? `<h3>Cliopatria’s borders, ${when}</h3>
       <p class="sub">${changes.length} year${changes.length > 1 ? 's' : ''} in which Cliopatria’s border differs from the year before’s: ${changes.join(', ')}</p>
-      <div class="actions"><button class="prp-btn sm primary" id="animate" type="button">▶ Play ${when} border changes</button>
+      <div class="actions"><button class="prp-btn sm primary" id="animate" type="button">▶ Play ${when} borders</button>
       <button class="prp-btn sm" id="gif" type="button">⤓ Download GIF</button></div>
       <p class="note">Year by year: Cliopatria gives borders by the year, so a change within a year is not shown.</p>` : ''}
     ${page ? `<p class="note">More: <a href="${wiki(page)}" target="_blank" rel="noopener">${esc(page)}</a> on Wikipedia</p>` : ''}
@@ -305,8 +323,10 @@ function overviewText(name, a, y, leaders, offices, events, ruling) {
   if (count('coup')) ev.push(`${count('coup')} irregular seizure${count('coup') > 1 ? 's' : ''} of power`);
   if (count('election')) ev.push(`${count('election')} election${count('election') > 1 ? 's' : ''}`);
   if (count('referendum')) ev.push(`${count('referendum')} referendum${count('referendum') > 1 ? 's' : ''}`);
-  if (count('border')) ev.push('changes to its borders');
   if (ev.length) parts.push(`The ${one ? 'year' : 'period'} saw ${ev.join(', ')}.`);
+  // A border event says Cliopatria's border differs from the year before's, which may be a redrawing (#border-limit).
+  const differ = new Set(events.filter(e => e.type === 'border').map(e => e.date.slice(0, 4))).size;
+  if (differ) parts.push(one ? `${poss(name)} border in Cliopatria differs from ${y - 1}’s.` : `${poss(name)} border in Cliopatria differs from the year before’s in ${differ} of the years ${a}–${y}.`);
   return parts.join(' ') || `No leadership data is recorded for ${name} in ${one ? y : `${a}–${y}`}.`;
 }
 
@@ -603,7 +623,7 @@ function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
   const y = +p.get('y') || state.data.lastYear;
   const raw = p.get('c'), old = /^\d+$/.test(raw || '');
-  const c = old ? state.data.oldKeys?.[raw] ?? null : raw;
+  const c = old ? own(state.data.oldKeys, raw) ?? null : raw;
   return { y, f: PRPPeriod.rules.readStart(period.get().stops, p.get('f'), y, 'end', !p.get('y') && !p.get('f'), openSteps()), c: c && country(c) ? c : null,
     m: PRPPeriod.rules.readMovement(p.get(PRPPeriod.MOVE_PARAM)), old: old && !!(c && country(c)) };
 }

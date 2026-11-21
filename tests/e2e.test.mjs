@@ -77,7 +77,7 @@ test('the map says Cliopatria gives one border a year and names its 2024 changes
   await open('#y=2024&c=Q30');
   const note = (await page.textContent('figcaption #border-limit')).replace(/\s+/g, ' ');
   assert.match(note, /^One border a year, in Cliopatria’s sample years: a border that changed within a year is not shown, and a change can show a year late\./);
-  assert.match(note, /In 2024, Cliopatria’s last year, the United Kingdom, France, the United States and Ukraine each show a border change/);
+  assert.match(note, /In 2024, Cliopatria’s last year, the United Kingdom, France, the United States and Ukraine are each marked “Cliopatria’s border differs”/);
   const data = JSON.parse(readFileSync(new URL('../data/countries.json', import.meta.url), 'utf8'));
   const in2024 = Object.values(data.countries).filter(c => c.events.some(e => e.type === 'border' && e.date.startsWith('2024'))).map(c => c.name).sort();
   assert.deepEqual(in2024, ['France', 'Ukraine', 'United Kingdom', 'United States'], 'the note names the states the data gives');
@@ -110,11 +110,30 @@ test('an old address by Gleditsch and Ward number opens the same state and is re
   assert.deepEqual(errors, []);
 });
 
+// Review X1 of 21 November 2026: a key is looked up in the data's own states only. Before, #c=constructor (or any name
+// every object inherits) was taken for a state, and the panel failed with "Could not load historical data". A key that
+// names no state opens the year with no state selected, as an unknown number did before the Wikidata keys; so does one
+// arriving by a change of the address.
+test('an address key that names no state opens the year with none selected, never a property every object has', async () => {
+  for (const c of ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf', 'Q0', '%00']) {
+    await open(`#y=1962&c=${c}`);
+    assert.equal(await page.textContent('#panel h2'), '1962', `#c=${c}`);
+    assert.doesNotMatch(await page.textContent('#status'), /Could not load/, `#c=${c}`);
+    assert.equal(await page.locator('#close').count(), 0, `#c=${c}: no state's panel`);
+  }
+  await open('#y=1962&c=Q30');
+  for (const c of ['constructor', '__proto__']) {
+    await page.evaluate(h => { location.hash = h; }, `#y=1962&c=${c}`);
+    await page.waitForFunction(() => document.querySelector('#panel h2')?.textContent === '1962', null, { timeout: 5000 });
+  }
+  assert.deepEqual(errors, []);
+});
+
 // What the free borders cannot show is said in plain words where it is missing.
 test('a covered state with no free border for the year is named as one VM cannot place; 2025–2026 are drawn at 2024', async () => {
   await open('#y=1950');
   const sub = await page.textContent('#panel .sub');
-  const m = sub.match(/ (\d+) (?:is|are) covered in 1950, but VM cannot place (?:it|them) on a free border for 1950: ([^.]+)\./);
+  const m = sub.match(/ (\d+) (?:is|are) covered in 1950 but not drawn: VM cannot place ([^.]+) on a free border for 1950\./);
   assert.ok(m, sub);
   for (const name of ['Poland', 'San Marino', 'Liechtenstein']) assert.ok(m[2].includes(name), `${name} in ${m[2]}`);
   assert.doesNotMatch(m[2], /Monaco|Andorra/, 'Cliopatria draws Monaco and Andorra');
@@ -127,7 +146,8 @@ test('a covered state with no free border for the year is named as one VM cannot
   assert.match(await page.textContent('#caption'), /2025 and 2026 are drawn on the borders of 2024/);
   await open('#y=1938&c=Q41304');
   assert.equal(await page.locator('#animate').count(), 0, 'no animation within one year');
-  assert.match(await page.textContent('#panel'), /Cliopatria gives borders by the year, so VM cannot show when within 1938 they changed/);
+  // Review X3 (21 November 2026): the border differs in Cliopatria, which may be a redrawing; no change is asserted.
+  assert.match(await page.textContent('#panel'), /Cliopatria gives borders by the year: the map shows Germany’s border for 1938, which differs in Cliopatria from 1937’s by more than 1% of its area\. That may be a redrawing of Cliopatria’s rows rather than a change of border, and a change within 1938 cannot be shown\./);
   assert.deepEqual(errors, []);
 });
 
@@ -149,7 +169,7 @@ test('a year\'s count of states says how it differs from the coverage over all t
   assert.ok(noBorder.length > 1, 'some covered countries have no free border in 1950');
   const sub = await page.textContent('#panel .sub');
   const head = sub.match(/^(\d+) of the (\d+) countries covered over the years are on the map at the end of 1950\./);
-  const nb = sub.match(/ (\d+) are covered in 1950, but VM cannot place them on a free border for 1950: ([^.]+)\./);
+  const nb = sub.match(/ (\d+) are covered in 1950 but not drawn: VM cannot place ([^.]+) on a free border for 1950\./);
   const other = sub.match(/ The other (\d+) were not independent states then: (.+)\.$/);
   assert.ok(head && nb && other, sub);
   assert.equal(+head[2], total);
@@ -169,6 +189,43 @@ test('a year\'s count of states says how it differs from the coverage over all t
   assert.match(await page.textContent('#table-caption'), new RegExp(`For each of the ${head[1]} on the map:`));
   assert.equal(await page.locator('#year-table tbody tr').count(), +head[1], 'the table lists exactly the states the note counts');
   await page.click('#tab-map');
+});
+
+// Review X2 of 21 November 2026: the states VM cannot place were named only in the panel with no state selected, so
+// choosing the United Kingdom in 1950 took Poland, Japan, Liechtenstein and San Marino off the page while the map still
+// did not draw them. #unplaced, beside the map, names them whether or not a state is selected (and over a period, for
+// the year the map draws), in words a screen reader reads, at desktop and phone widths with no sideways scroll.
+test('the states VM cannot place stay named beside the map, with a state selected or not, at 1440, 390 and 360 px', async () => {
+  const data = json('data/countries.json');
+  const { keyIn } = await import('../scripts/retro-shape.mjs');
+  const { displayName } = await import('../names.mjs');
+  const rows = json('data/borders.topo.json').objects.borders.geometries.map(g => g.properties);
+  const date = '1950-12-31', placed = new Set(rows.map(r => keyIn(r, 1950)).filter(Boolean));
+  const noBorder = Object.entries(data.countries).filter(([key, c]) => c.spans.some(([s, e]) => s <= date && (!e || date <= e)) && !placed.has(key))
+    .map(([key, c]) => displayName(key, c.name, date));
+  for (const name of ['Poland', 'Japan', 'Liechtenstein', 'San Marino']) assert.ok(noBorder.includes(name), `${name} has no free border in 1950`);
+  for (const width of [1440, 390, 360]) {
+    const m = await browser.newPage({ viewport: { width, height: 900 }, ...(width < 768 ? { isMobile: true, hasTouch: true } : {}) });
+    const errs = []; m.on('pageerror', e => errs.push(e.message));
+    try {
+      for (const hash of ['#y=1950', '#y=1950&c=Q145', '#y=1950&f=1946&c=Q145', '#y=1950&c=Q36']) {
+        await m.goto(`${BASE}/${hash}`, { waitUntil: 'networkidle' });
+        await m.waitForFunction(() => document.querySelectorAll('path.shape').length > 50, null, { timeout: 30000 });
+        const note = m.locator('#view-map #unplaced');
+        assert.ok(await note.isVisible(), `${width} px ${hash}: the note is shown`);
+        const text = (await note.textContent()).replace(/\s+/g, ' ').trim();
+        const got = text.match(/^VM cannot place (.+) on a free border for 1950\.$/);
+        assert.ok(got, `${width} px ${hash}: ${text}`);
+        for (const name of noBorder) assert.ok(got[1].includes(name), `${width} px ${hash}: ${name} in ${text}`);
+        assert.doesNotMatch(text, /Monaco|Andorra|United Kingdom/, 'only states the map does not draw');
+        assert.ok(!/'/.test(text), 'the typographic apostrophe');
+        assert.match(await m.locator('#view-map').ariaSnapshot(), /VM cannot place [^\n]*Liechtenstein[^\n]* on a free border for 1950/, 'a screen reader reads it');
+        const { scroll, inner } = await m.evaluate(() => ({ scroll: document.documentElement.scrollWidth, inner: innerWidth }));
+        assert.ok(scroll <= inner + 1, `${width} px ${hash}: page is ${scroll}px wide on ${inner}px`);
+      }
+      assert.deepEqual(errs, []);
+    } finally { await m.close(); }
+  }
 });
 
 // Correction RT-02 (15 November 2026): the leader lists of nine countries stopped years ago (Archigos ends in 2015 and
@@ -428,7 +485,7 @@ test('a period of years: the panels and the address follow it; the handles close
   assert.equal(await page.textContent('#legend-title'), 'In the period');
   assert.match(await page.textContent('.overview'), /2 leaders between 1938 and 1945/);
   assert.match(await page.textContent('#panel'), /In charge during 1938–1945/);
-  assert.match(await page.textContent('#animate'), /1938–1945 border changes/);
+  assert.match(await page.textContent('#animate'), /Play 1938–1945 borders/);
   // The end handle pulled back onto the start: one year again, and no f in the address.
   await page.locator('#year').fill('1938');
   await page.locator('#year').dispatchEvent('input');
@@ -545,9 +602,45 @@ test('Germany 1938: leader, events, border changes, links', async () => {
   // Cliopatria's borders are by the year: the 1938 border differs from 1937's (Austria, the Sudetenland), dated by the
   // year only, and one year has no animation (the test of the free borders above).
   assert.match(panel, /1938border\s*Germany’s border in Cliopatria differs from 1937’s/);
-  assert.match(panel, /Border changes in 1938/);
+  assert.match(panel, /Cliopatria’s border in 1938/);
   assert.ok(await page.locator('a[href*="wikipedia.org/wiki/1938_in_Germany"]').count(), 'year page link');
   assert.ok(await page.locator('a[href*="wikipedia.org/wiki/Adolf_Hitler"]').count(), 'leader link');
+});
+
+// Review X3 of 21 November 2026: a border event is a year in which a state's area in Cliopatria differs from the year
+// before's by more than 1%, which may be a redrawing of Cliopatria's rows (#border-limit). The overview said "changes to
+// its borders" (the United Kingdom in 2024); it, the legend, the tooltip, the table, the year's counts, the panel's
+// headings and the method now say that Cliopatria's border differs, never that the border changed.
+test('the overview, legend, tooltip, table and panel say Cliopatria’s border differs, not that the border changed', async () => {
+  const changed = /border change|changes? (?:to|of) (?:its|the) borders?|they changed/i;
+  await open('#y=2024&c=Q145');
+  const overview = await page.textContent('.overview');
+  assert.doesNotMatch(overview, changed, overview);
+  assert.match(overview, /United Kingdom’s border in Cliopatria differs from 2023’s\./, overview);
+  const panel = await page.textContent('#panel');
+  assert.doesNotMatch(panel, changed, panel);
+  assert.match(panel, /may be a redrawing of Cliopatria’s rows rather than a change of border/);
+  const legend = await page.textContent('.legend');
+  assert.doesNotMatch(legend, changed, legend);
+  assert.match(legend, /Cliopatria’s border differs/);
+  // Ukraine in 2024: no new leader, and its border in Cliopatria differs from 2023's, so that is its colour and label.
+  await page.locator('path.shape[data-key="Q212"]').first().dispatchEvent('mousemove');
+  assert.match(await page.textContent('#tooltip'), /Cliopatria’s border differs in 2024/);
+  await page.click('#tab-table');
+  await page.waitForSelector('#year-table tbody tr[data-key="Q212"]');
+  assert.equal((await page.textContent('#year-table tbody tr[data-key="Q212"] .cell-status')).trim(), 'Cliopatria’s border differs');
+  assert.doesNotMatch(await page.textContent('#year-table'), changed);
+  await page.click('#tab-map');
+  // Over a period: the overview counts the years, the heading and the button name no change.
+  await open('#y=1939&f=1935&c=Q41304');
+  assert.match(await page.textContent('.overview'), /Germany’s border in Cliopatria differs from the year before’s in 3 of the years 1935–1939\./);
+  assert.doesNotMatch(await page.textContent('#panel'), changed);
+  // The year with no state selected: its counts.
+  await open('#y=2024');
+  assert.doesNotMatch(await page.textContent('#panel .prp-kpis'), changed);
+  assert.match(await page.textContent('#panel .prp-kpis'), /Borders that differ in Cliopatria\s*4/);
+  assert.doesNotMatch(await page.textContent('footer'), /otherwise a change of borders/);
+  assert.deepEqual(errors, []);
 });
 
 test('parties in power and the yearly overview follow the year', async () => {

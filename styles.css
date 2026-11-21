@@ -173,6 +173,9 @@ body { margin: 0; }
 .legend h4 { margin: 0; color: var(--prp-muted); font: 500 var(--prp-fs-xs)/1.3 var(--prp-font-mono); letter-spacing: .06em; text-transform: uppercase; }
 .legend ul { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0; padding: 0; list-style: none; color: var(--prp-text-2); font-size: var(--prp-fs-sm); }
 .legend li { display: flex; align-items: center; gap: 6px; }
+/* The covered states the map does not draw for its year: plain text under the map, wrapping at any width. */
+.unplaced { margin: 8px 0 0; color: var(--prp-text-2); font-size: var(--prp-fs-sm); line-height: 1.5; overflow-wrap: break-word; }
+.unplaced[hidden] { display: none; }
 .swatch { width: 12px; height: 12px; border-radius: 2px; flex: none; box-shadow: 0 0 0 1px var(--prp-line); }
 
 /* Table view */

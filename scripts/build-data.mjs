@@ -1,20 +1,32 @@
 #!/usr/bin/env node
 /**
- * Builds the H&P Retrospective data files from three open sources:
- *  - CShapes 2.0 (ETH Zürich, CC BY-NC-SA 4.0): dated state borders, 1886–2019
- *  - Archigos 4.1 (Goemans, Gleditsch & Chiozza): effective leaders, 1875–2015
- *  - Wikidata (CC0): heads of state/government after 2015, national elections and
- *    referendums, and links to Wikipedia
+ * Builds the Political Retrospective's data/countries.json (its second shape, scripts/retro-shape.mjs) from:
+ *  - Archigos 4.1 (Goemans, Gleditsch and Chiozza; it states no licence, kept until VM's owner decides): effective
+ *    leaders to 2015, and how each took and left office. Its country column (ccode) is a Gleditsch and Ward number,
+ *    read through OLD_KEYS (countries.mjs) to the state's Wikidata key.
+ *  - Wikidata (CC0): heads of state and government after 2015, national elections and referendums, links to Wikipedia
+ *  - Wikipedia: which "<year> in <country>" pages exist
+ *  - data/borders.topo.json, Cliopatria v0.2.1's rows (CC BY 4.0) as scripts/build-borders.mjs writes them: only for
+ *    the border events. Run build-borders.mjs first when the borders change.
  *
- * Usage: node scripts/build-data.mjs   (needs raw/CShapes-2.0.geojson and raw/Archigos_4.1_stata14.dta)
- * Output: data/borders.topo.json, data/countries.json
+ * Usage: node scripts/build-data.mjs   (needs raw/Archigos_4.1_stata14.dta and data/borders.topo.json; network)
+ * The order of steps; it writes nothing until every step has worked:
+ *  1. Archigos's leaders (from 1926), each under its state's key.
+ *  2. Wikidata's office holders, and the leader lists continued past 2015 with them.
+ *  3. Wikidata's elections (cached in build/elections-cache.json) and Wikipedia's year pages.
+ *  4. Leader events, and the hand corrections to the leader lists (leader-corrections.mjs correctCountry).
+ *  5. Each state's spans from its corrected leader list (retro-shape.mjs coverSpans), elections kept only inside them;
+ *     border events from the borders file's rows (retro-shape.mjs borderEvents); the election corrections
+ *     (election-corrections.mjs); then writes data/countries.json.
+ * Output: data/countries.json (resolve-leaders.mjs and build-parties.mjs then patch it; npm run build-data runs all three)
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import { readDta } from './read-dta.mjs';
-import { COUNTRIES, YEAR_IN, FIRST_YEAR, LAST_YEAR } from './countries.mjs';
+import { COUNTRIES, OLD_KEYS, YEAR_IN, FIRST_YEAR, LAST_YEAR } from './countries.mjs';
 import { displayName } from '../names.mjs';
-import { applyCorrections } from './leader-corrections.mjs';
+import { correctCountry } from './leader-corrections.mjs';
+import { correctElections } from './election-corrections.mjs';
+import { coverSpans, borderEvents, document } from './retro-shape.mjs';
 
 const ROOT = new URL('..', import.meta.url);
 const path = p => new URL(p, ROOT).pathname.replace(/^\/([A-Z]:)/, '$1');
@@ -22,33 +34,13 @@ mkdirSync(path('data'), { recursive: true });
 mkdirSync(path('build'), { recursive: true });
 
 const START = `${FIRST_YEAR}-01-01`;
-const OPEN_END = '9999-12-31';
 const UA = 'JDP-I H&P Retrospective data build (https://jdpi.pages.dev)';
-const pad = n => String(n).padStart(2, '0');
-
-/* ------------------------------------------------------------------ borders */
-function buildBorders() {
-  const geo = JSON.parse(readFileSync(path('raw/CShapes-2.0.geojson'), 'utf8'));
-  const features = geo.features
-    .filter(f => f.properties.gweyear >= FIRST_YEAR)
-    .map(f => {
-      const p = f.properties;
-      const start = `${p.gwsyear}-${pad(p.gwsmonth)}-${pad(p.gwsday)}`;
-      // CShapes ends in 2019; borders still in place then are treated as current.
-      let end = `${p.gweyear}-${pad(p.gwemonth)}-${pad(p.gweday)}`;
-      if (end >= '2019-12-30') end = OPEN_END;
-      // Archigos keeps Serbia under Yugoslavia's code (345); CShapes gives post-2006 Serbia 340.
-      const gw = p.gwcode === 340 ? 345 : p.gwcode;
-      return { type: 'Feature', geometry: f.geometry, properties: { gw, name: p.cntry_name, s: start, e: end } };
-    });
-  writeFileSync(path('build/borders.geojson'), JSON.stringify({ type: 'FeatureCollection', features }));
-  // Simplify and convert to TopoJSON with mapshaper (keeps shared borders consistent).
-  execFileSync('npx', ['--yes', 'mapshaper@0.7.98', path('build/borders.geojson'),
-    '-simplify', 'weighted', '6%', 'keep-shapes',
-    '-o', 'format=topojson', 'quantization=100000', 'precision=0.001', path('data/borders.topo.json')],
-    { stdio: 'inherit', shell: process.platform === 'win32' });
-  console.log(`borders: ${features.length} dated shapes`);
-  return features;
+// The borders file's rows (build-borders.mjs): only their properties are read, for the border events.
+function borderRows() {
+  const topo = JSON.parse(readFileSync(path('data/borders.topo.json'), 'utf8'));
+  const rows = topo.objects?.borders?.geometries?.map(g => g.properties) || [];
+  if (!rows.length || !rows.every(r => /^cl-/.test(r.id))) throw new Error('data/borders.topo.json is not build-borders.mjs\'s: run it first');
+  return rows;
 }
 
 /* ------------------------------------------------------------------ leaders */
@@ -64,13 +56,14 @@ function dbpediaTitle(uri) {
 
 function archigosLeaders() {
   const { rows } = readDta(path('raw/Archigos_4.1_stata14.dta'));
-  const byGw = {};
+  const byKey = {};
   for (const r of rows) {
-    if (r.ccode === 340) r.ccode = 345; // post-2006 Serbia continues Yugoslavia's record
-    if (!COUNTRIES[r.ccode]) continue;
+    // Archigos's ccode is a Gleditsch and Ward number; post-2006 Serbia (340) continues Yugoslavia's record (345).
+    const key = OLD_KEYS[r.ccode === 340 ? 345 : r.ccode];
+    if (!key) continue;
     if (r.enddate < START) continue;
     const title = dbpediaTitle(r.dbpediauri);
-    (byGw[r.ccode] ||= []).push({
+    (byKey[key] ||= []).push({
       name: r.leader,
       full: title ? title.replace(/_/g, ' ').replace(/ \(.*\)$/, '') : null,
       url: title ? `https://en.wikipedia.org/wiki/${encodeURIComponent(title)}` : null,
@@ -82,7 +75,7 @@ function archigosLeaders() {
       source: 'Archigos'
     });
   }
-  return byGw;
+  return byKey;
 }
 
 async function sparql(query) {
@@ -116,8 +109,8 @@ async function wikidataOffices() {
       OPTIONAL { ?article schema:about ?person ; schema:isPartOf <https://en.wikipedia.org/> }
       SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
     }`);
-  const qidToGw = {};
-  for (const [gw, c] of Object.entries(COUNTRIES)) for (const q of c.qids) (qidToGw[q] ||= []).push(+gw);
+  const qidToKey = {};
+  for (const [key, c] of Object.entries(COUNTRIES)) for (const q of c.qids) (qidToKey[q] ||= []).push(key);
   const out = {};
   for (const b of rows) {
     const qid = val(b, 'country').split('/').pop();
@@ -125,17 +118,17 @@ async function wikidataOffices() {
     const start = day(val(b, 'start'));
     const end = day(val(b, 'end'));
     if (!start || (end && end < START)) continue;
-    for (const gw of qidToGw[qid] || []) {
-      (out[gw] ||= []).push({
+    for (const key of qidToKey[qid] || []) {
+      (out[key] ||= []).push({
         office, full: val(b, 'personLabel'), url: val(b, 'article'), start, end,
         qid: val(b, 'person').split('/').pop()
       });
     }
   }
   // De-duplicate the same person/office/start reported through several entities.
-  for (const gw of Object.keys(out)) {
+  for (const key of Object.keys(out)) {
     const seen = new Set();
-    out[gw] = out[gw].filter(x => { const k = `${x.office}|${x.qid}|${x.start}`; if (seen.has(k)) return false; seen.add(k); return true; })
+    out[key] = out[key].filter(x => { const k = `${x.office}|${x.qid}|${x.start}`; if (seen.has(k)) return false; seen.add(k); return true; })
       .sort((a, b) => a.start.localeCompare(b.start));
   }
   return out;
@@ -144,10 +137,10 @@ async function wikidataOffices() {
 // After Archigos ends (2015), continue with whichever office Archigos tracked for that country.
 function extendLeaders(archigos, offices) {
   const CUTOFF = '2015-12-31';
-  for (const gw of Object.keys(COUNTRIES)) {
-    const list = archigos[gw] || [];
+  for (const key of Object.keys(COUNTRIES)) {
+    const list = archigos[key] || [];
     const last = list.filter(l => !l.end).at(-1);
-    const off = offices[gw] || [];
+    const off = offices[key] || [];
     if (!last) continue;
     // Which office did Archigos use? Match the 2015 leader's surname against both offices.
     const surname = last.name.toLowerCase().split(/[\s-]+/).at(-1);
@@ -172,7 +165,7 @@ function extendLeaders(archigos, offices) {
       list.push({ name: o.full.split(' ').at(-1), full: o.full, url: o.url, start: o.start,
         end: o.end || (later[i + 1]?.start ?? null), entry: null, exit: null, exitHow: null, source: 'Wikidata' });
     }
-    archigos[gw] = list;
+    archigos[key] = list;
   }
   return archigos;
 }
@@ -210,8 +203,8 @@ async function elections() {
     }
   }));
   for (const qid of qids) for (const b of cache[qid] || []) rows.push({ ...b, country: { value: qid }, eLabel: b.title });
-  const qidToGw = {};
-  for (const [gw, c] of Object.entries(COUNTRIES)) for (const q of c.qids) (qidToGw[q] ||= []).push(+gw);
+  const qidToKey = {};
+  for (const [key, c] of Object.entries(COUNTRIES)) for (const q of c.qids) (qidToKey[q] ||= []).push(key);
   const out = {};
   const seen = new Set();
   for (const b of rows) {
@@ -223,49 +216,24 @@ async function elections() {
     const qid = val(b, 'country').split('/').pop();
     // US state contests (ballot measures, state legislatures) carry the US as country too.
     if (qid === 'Q30' && !/United States|presidential/i.test(label)) continue;
-    for (const gw of qidToGw[qid] || []) {
-      const key = `${gw}|${val(b, 'e')}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      (out[gw] ||= []).push({ date: day(val(b, 'date')), type: /referendum/i.test(label) ? 'referendum' : 'election', text: label, url: val(b, 'article') });
+    for (const key of qidToKey[qid] || []) {
+      const id = `${key}|${val(b, 'e')}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      (out[key] ||= []).push({ date: day(val(b, 'date')), type: /referendum/i.test(label) ? 'referendum' : 'election', text: label, url: val(b, 'article') });
     }
-  }
-  return out;
-}
-
-function borderEvents(features) {
-  const out = {};
-  const byGw = {};
-  for (const f of features) (byGw[f.properties.gw] ||= []).push(f.properties);
-  for (const [gw, shapes] of Object.entries(byGw)) {
-    if (!COUNTRIES[gw]) continue;
-    shapes.sort((a, b) => a.s.localeCompare(b.s));
-    shapes.forEach((s, i) => {
-      if (s.s >= START) {
-        const prev = shapes[i - 1];
-        const isNew = !prev || prev.e < s.s.replace(/-\d\d$/, '') + '-00';
-        const name = displayName(+gw, s.name, s.s);
-        (out[gw] ||= []).push({
-          date: s.s, type: isNew && !prev ? 'statehood' : 'border',
-          text: !prev ? `${name} becomes an independent state` : `${name}'s borders change`
-        });
-      }
-      if (s.e !== OPEN_END && !shapes[i + 1]) {
-        (out[gw] ||= []).push({ date: s.e, type: 'statehood', text: `${displayName(+gw, s.name, s.e)} ceases to exist as an independent state` });
-      }
-    });
   }
   return out;
 }
 
 function leaderEvents(leaders) {
   const out = {};
-  for (const [gw, list] of Object.entries(leaders)) {
+  for (const [key, list] of Object.entries(leaders)) {
     for (const l of list) {
       if (l.start < START) continue;
       const who = l.full || l.name;
       const how = l.entry === 'Irregular' ? ' (irregular seizure of power)' : l.entry === 'Foreign Imposition' ? ' (imposed by a foreign power)' : '';
-      (out[gw] ||= []).push({ date: l.start, type: l.entry === 'Irregular' ? 'coup' : 'leader', text: `${who} takes power${how}`, url: l.url });
+      (out[key] ||= []).push({ date: l.start, type: l.entry === 'Irregular' ? 'coup' : 'leader', text: `${who} takes power${how}`, url: l.url });
     }
   }
   return out;
@@ -274,9 +242,9 @@ function leaderEvents(leaders) {
 /* ------------------------------------------------------- "Year in" pages */
 async function yearPages() {
   const titles = [];
-  for (const [gw, c] of Object.entries(COUNTRIES)) {
-    const place = YEAR_IN[gw] || c.name;
-    for (let y = FIRST_YEAR; y <= LAST_YEAR; y++) titles.push({ gw, y, title: `${y} in ${place}` });
+  for (const [key, c] of Object.entries(COUNTRIES)) {
+    const place = YEAR_IN[key] || c.name;
+    for (let y = FIRST_YEAR; y <= LAST_YEAR; y++) titles.push({ key, y, title: `${y} in ${place}` });
   }
   const exists = new Set();
   for (let i = 0; i < titles.length; i += 50) {
@@ -286,15 +254,15 @@ async function yearPages() {
     const res = await fetch(url, { headers: { 'User-Agent': UA } }).then(r => r.json());
     const ok = new Set(Object.values(res.query.pages).filter(p => !('missing' in p)).map(p => p.title));
     for (const r of res.query.redirects || []) if (ok.has(r.to)) ok.add(r.from);
-    for (const t of batch) if (ok.has(t.title)) exists.add(`${t.gw}|${t.y}`);
+    for (const t of batch) if (ok.has(t.title)) exists.add(`${t.key}|${t.y}`);
   }
   const out = {};
-  for (const t of titles) if (exists.has(`${t.gw}|${t.y}`)) (out[t.gw] ||= []).push(t.y);
+  for (const t of titles) if (exists.has(`${t.key}|${t.y}`)) (out[t.key] ||= []).push(t.y);
   return out;
 }
 
 /* ------------------------------------------------------------------ main */
-const features = buildBorders();
+const rows = borderRows();
 const archigos = archigosLeaders();
 console.log('querying Wikidata offices…');
 const offices = await wikidataOffices();
@@ -303,37 +271,36 @@ console.log('querying Wikidata elections…');
 const elec = await elections();
 console.log('checking Wikipedia year pages…');
 const years = await yearPages();
-const bEvents = borderEvents(features);
 const lEvents = leaderEvents(leaders);
 
-// Years each state existed, so elections shared between predecessor and successor items
-// (e.g. Weimar vs. modern Germany) land on the right state.
-const span = {};
-for (const f of features) {
-  const s = span[f.properties.gw] ||= { from: f.properties.s, to: f.properties.e };
-  if (f.properties.s < s.from) s.from = f.properties.s;
-  if (f.properties.e > s.to) s.to = f.properties.e;
-}
-const within = (gw, d) => !span[gw] || (d >= span[gw].from && d <= span[gw].to);
-
+// Lists the sources above leave short of the present, completed by hand (leader-corrections.mjs) before the spans
+// are worked out from them; then each state's elections only inside its spans, so elections shared between
+// predecessor and successor items (Weimar and modern Germany) land on the right state.
 const countries = {};
-for (const [gw, c] of Object.entries(COUNTRIES)) {
-  const events = [...(bEvents[gw] || []), ...(lEvents[gw] || []), ...(elec[gw] || []).filter(e => within(gw, e.date))]
-    .filter(e => e.date >= START).sort((a, b) => a.date.localeCompare(b.date));
-  countries[gw] = {
+for (const [key, c] of Object.entries(COUNTRIES)) {
+  countries[key] = {
     name: c.name, iso3: c.iso3,
-    yearPage: YEAR_IN[gw] || c.name, yearPages: years[gw] || [],
-    leaders: leaders[gw] || [],
-    offices: (offices[gw] || []).map(({ qid, ...o }) => o),
-    events
+    yearPage: YEAR_IN[key] || c.name, yearPages: years[key] || [],
+    leaders: leaders[key] || [],
+    offices: (offices[key] || []).map(({ qid, ...o }) => o),
+    events: (lEvents[key] || []).filter(e => e.date >= START)
   };
 }
-// Lists the sources above leave short of the present, completed by hand (leader-corrections.mjs).
-applyCorrections(countries);
-writeFileSync(path('data/countries.json'), JSON.stringify({
-  built: new Date().toISOString().slice(0, 10), firstYear: FIRST_YEAR, lastYear: LAST_YEAR,
-  sources: ['CShapes 2.0 (ETH Zürich), CC BY-NC-SA 4.0', 'Archigos 4.1 (Goemans, Gleditsch & Chiozza)', 'Wikidata (CC0)', 'Wikipedia'],
-  countries
-}));
+for (const [key, c] of Object.entries(countries)) correctCountry(key, c);
+for (const [key, c] of Object.entries(countries)) {
+  c.spans = coverSpans(c.leaders);
+  const within = d => c.spans.some(([s, e]) => d >= s && (!e || d <= e));
+  c.events = [...c.events, ...(elec[key] || []).filter(e => e.date >= START && within(e.date))];
+}
+const bordersTo = Math.max(...rows.map(r => r.t));
+const bEvents = borderEvents(rows, countries, (k, d) => displayName(k, countries[k].name, d), FIRST_YEAR, bordersTo);
+for (const [key, c] of Object.entries(countries)) c.events = [...c.events, ...(bEvents[key] || [])].sort((a, b) => a.date.localeCompare(b.date));
+// The election corrections last, once every election is in (applyCorrections does both steps the same way).
+correctElections(countries);
+let before = {};
+try { before = JSON.parse(readFileSync(path('data/countries.json'), 'utf8')); } catch { /* first run */ }
+writeFileSync(path('data/countries.json'), JSON.stringify(document({
+  built: new Date().toISOString().slice(0, 10), bordersBuilt: before.bordersBuilt || null, firstYear: FIRST_YEAR, lastYear: LAST_YEAR, bordersTo, countries
+})));
 const n = Object.values(countries);
 console.log(`countries: ${n.length}; leaders: ${n.reduce((s, c) => s + c.leaders.length, 0)}; events: ${n.reduce((s, c) => s + c.events.length, 0)}`);

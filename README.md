@@ -3,35 +3,47 @@
 A submodule of **Retrospective Intelligence** in **PRP** (Personal Resource Planner, by JDP-Iq): https://hp-retrospective.pages.dev (also inside PRP at https://jdpi.pages.dev/#/rs/retrospective). It uses the shared PRP stylesheet and connector (`https://jdpi.pages.dev/design/prp.css`, `prp-bar.js`), light by default with a dark theme.
 
 Move the slider from **1926 to the present**:
-- **The map redraws each state's borders** as they stood at the end of that year, or today for the current year. Each country is coloured by what happened that year: new leader, irregular seizure of power, border change, or no change.
-- **Clicking a country** shows who was in charge that year, how they took and left power, other office-holders, and that year's key events (elections, referendums, leadership changes, statehood and border changes). Each one links to Wikipedia, plus a "Year in [country]" page where Wikipedia has one.
-- **Border changes:** if a country's borders changed during a year, **Play border changes** animates them on the map, and **Download GIF** saves the sequence as an animated GIF.
+- **The map redraws each state's borders** for that year, from Cliopatria's rows for the year (borders are by the year, in Cliopatria's sample years; 2025 and 2026 are drawn on 2024's, the last year Cliopatria holds). Each country is coloured by what happened that year: new leader, irregular seizure of power, border change, or no change.
+- **Clicking a country** shows who was in charge that year, how they took and left power, other office-holders, and that year's key events (elections, referendums, leadership changes and border changes). Each one links to Wikipedia, plus a "Year in [country]" page where Wikipedia has one.
+- **Border changes:** a border change is a year in which a state's area in Cliopatria differs from the year before's by more than 1%. Over a period of years, **Play border changes** steps through the period's first year and each year of change, and **Download GIF** saves those frames as an animated GIF. Cliopatria gives one border a year, so a change within a year cannot be shown or animated; a single year says so.
 - **With no country selected,** the panel lists every key event that year across all covered countries.
-- **Map and Table** are tabs: the table lists every covered state in the selected year, who was in charge and what happened, and sorts by any column. `?view=table` links straight to it; the `#y=…&c=…` hash still sets the year and country.
-- **Search** finds countries, historical state names and leaders. Picking a leader jumps to their first year in office.
+- **Map and Table** are tabs: the table lists every covered state on the map in the selected year, who was in charge and what happened, and sorts by any column. `?view=table` links straight to it; the `#y=…&c=…` hash still sets the year and country.
+- **Addresses:** `c` is the state's Wikidata item (`#y=1962&c=Q30`). An address from before 20 November 2026 with a Gleditsch and Ward number (`#y=1962&c=2`) opens the same state and is rewritten to its item, through `oldKeys` in `data/countries.json`.
+- **Search** finds countries, leaders, and Cliopatria's own names for the rows that stand for a covered state (Weimar Republic, Nazi Germany). Picking a leader jumps to their first year in office.
 
-Coverage: the same 78 countries as Political Atlas, plus predecessor states (Weimar and Nazi Germany, West and East Germany, the Soviet Union, Czechoslovakia, Yugoslavia, the Republic of China). Colonies and mandates (for example Mandatory Palestine before 1948) weren't independent states, so they appear uncoloured.
+Coverage: the same 78 countries as Political Atlas, plus predecessor states (Weimar and Nazi Germany, West and East Germany, the Soviet Union, Czechoslovakia, Yugoslavia, the Republic of China), keyed by Wikidata item (`scripts/countries.mjs`). A state is covered from its first leader to its last (gaps of up to two years are not a break). Cliopatria's polity rows are matched to the states by name and year in `scripts/cliopatria-states.mjs`; rows that stand for no covered state appear uncoloured.
 
 ## Data sources
 
 | Source | Used for | Licence |
 |---|---|---|
-| [CShapes 2.0](https://icr.ethz.ch/data/cshapes/) (ETH Zürich) | Dated state borders, 1886–2019 (borders unchanged since 2019 are treated as current) | CC BY-NC-SA 4.0, **non-commercial use only** |
-| [Archigos 4.1](https://www.rochester.edu/college/faculty/hgoemans/data.htm) (Goemans, Gleditsch & Chiozza) | Each country's effective leader to 2015, and how they entered and left office | Academic dataset; please cite Goemans, Gleditsch & Chiozza (2009) |
-| [Wikidata](https://www.wikidata.org) | Leaders after 2015, heads of state and government, national elections and referendums, Wikipedia links; for the hand-built lists below, "position held" (P39) with its start and end dates (P580, P582) and each person's Wikidata id | CC0 |
+| [Cliopatria v0.2.1](https://github.com/Seshat-Global-History-Databank/cliopatria) (Seshat Global History Databank) | Polity borders by the year, 1926–2024 | [CC BY 4.0](https://github.com/Seshat-Global-History-Databank/cliopatria/blob/v0.2.1/LICENSE.md) |
+| [Archigos 4.1](https://www.rochester.edu/college/faculty/hgoemans/data.htm) (Goemans, Gleditsch & Chiozza) | Each country's effective leader to 2015, and how they entered and left office | No licence stated; it asks users to cite the article. Leaders to 2015 and how they took and left office: Archigos 4.1 (Goemans, Gleditsch and Chiozza), which states no licence; kept until VM’s owner decides. |
+| [Wikidata](https://www.wikidata.org) | The states' keys (their items); leaders after 2015, heads of state and government, national elections and referendums, Wikipedia links; for the hand-built lists below, "position held" (P39) with its start and end dates (P580, P582) and each person's Wikidata id | CC0 |
 | Wikipedia | "Year in [country]" pages and article links; for the hand-built lists, the English lists of office holders (and the person's infobox where the lists disagree) and the Catalan list of Andorra's General Syndics, read for dates and names | CC BY-SA 4.0 (facts and links only) |
 | [rulers.org](https://rulers.org) (Ben Cahoon) | Day dates for the hand-built lists, checked against the two above: Andorra's General Syndics, Monaco's Ministers of State, Liechtenstein's Heads of Government, Andorra's bishop Co-Princes, San Marino's Captains Regent | Facts, cited |
 | Governments' own records | San Marino: the Secretary of State for Internal Affairs' notice of 23 October 1957 on the Great and General Council's site (consigliograndeegenerale.sm), for the Captains Regent of October 1957. Monaco: the Journal de Monaco's Sovereign Ordinances 1277, 1278 (January 1932) and 2012 (July 1937), for two changes of Minister of State. Andorra: the General Council's index of office holders 1133-2023 (Jordi Guillamet, consellgeneral.ad), for two Syndics' names. Saint Kitts and Nevis: the government's biography of Denzil Douglas (gov.kn), for his first day | Facts, cited |
 | [Historisches Lexikon des Fürstentums Liechtenstein](https://historisches-lexikon.li) | Liechtenstein's national historical lexicon: the first day of Franz Joseph's regency (1938) and the change of Head of Government in 1928 | Facts, cited |
-| [Gleditsch & Ward's list of microstates](http://ksgleditsch.com/data/microstatessystem.dat) | First day of the ten states with no border in CShapes (independence, or before 1926) | Academic dataset; cite Gleditsch & Ward (1999) |
 
 ## Rebuild the data
+
+Borders (when Cliopatria or the crosswalk changes):
+
+```bash
+npm run build-borders -- --zip <path to cliopatria.geojson.zip>
+```
+
+The archive is `cliopatria.geojson.zip` from the v0.2.1 tag (https://github.com/Seshat-Global-History-Databank/cliopatria/tree/v0.2.1), kept outside the repository; the script checks its sha256 and stops if it is another file. It writes `data/borders.topo.json` (about 620 KB, 150 KB gzipped) and rewrites the border parts of `data/countries.json` (spans, border events), printing each state's years with no row ("VM cannot place it on a free border").
+
+Leaders, events and parties:
 
 ```bash
 npm run build-data
 ```
 
-You need `raw/CShapes-2.0.geojson` and `raw/Archigos_4.1_stata14.dta`; see the sources above. Wikidata results are cached in `build/`. The script writes `data/borders.topo.json` (about 300 KB) and `data/countries.json`.
+You need `raw/Archigos_4.1_stata14.dta` and the borders file above; Wikidata results are cached in `build/`. The script writes `data/countries.json` in its second shape ('retro-countries/2', `scripts/retro-shape.mjs`).
+
+jdpi reads `data/countries.json` from this repository's main branch in three scheduled workflows (calendar-refresh.yml, lake-refresh.yml, national-refresh.yml); a change to the file's shape is a change to what they read.
 
 ## Test
 
@@ -43,11 +55,15 @@ This runs end-to-end tests in your installed Edge. Set `RETRO_URL` to test the l
 
 ## Known limits
 
+- Borders are by the year, in Cliopatria's sample years, so a change within a year (the Anschluss in March 1938, say) cannot be dated or animated; the border animation and GIF of before 20 November 2026, which moved day by day, now move year by year. 2025 and 2026 are drawn on 2024's borders.
+- A covered state with no row of its own in Cliopatria for a year is named on the page as one "VM cannot place on a free border" for that year: Liechtenstein and San Marino in every year; Canada 1926–31; Denmark 1941–44 (Cliopatria draws it inside Nazi Germany); Poland 1944–52; Japan 1946–52; El Salvador 1979–91; Czechoslovakia 1939–46, 1969–90 and 1992; the Soviet and Yugoslav republics in 1990–91; and states whose leader list starts before Cliopatria's row for them (Belize 1961–82, the Bahamas 1967–72, Malta 1962–66). `npm run build-borders` prints the full list (41 of the 79 states have at least one such year).
+- Cliopatria's rows hold lands a state ruled but that were not part of it, so a state's area can be far larger than the state: Greenland with Denmark from 1946, Algeria with France from 1958 to 2023, Portugal's and Japan's empires, Nazi Germany's occupied lands, fragments far away (the United States row of 1967–2005 holds pieces in Indochina, Micronesia and Berlin). A border change is any year whose area differs from the year before's by more than 1%, so some are Cliopatria's redrawings (Luxembourg's rows differ by 2–6% in 1930, 1932, 1936 and 1958), and the page says "Cliopatria's border differs", not that the border moved.
+- There are no statehood events any more (they came from CShapes).
 - Archigos gives some leaders by surname only. Where Wikidata has no match, the leader links to a Wikipedia search instead of a specific article.
 - After 2015, each country follows the same office Archigos tracked (head of state or head of government), so a strong leader in the other office appears under "Also in office". Example: Serbia's President Vučić since 2017.
 - Where Archigos and Wikidata leave a leader list short of the present (Guatemala, Poland, Slovakia, Moldova, Romania, Israel, Saudi Arabia, Jamaica, Switzerland and Greece in November 2026), `scripts/leader-corrections.mjs` completes it, each entry checked against Wikidata and Wikipedia; `npm run build-data` applies it, and `node scripts/leader-corrections.mjs` patches `data/countries.json` on its own.
-- Archigos has no record of Montenegro after 1918 or of the ten microstates (Dominica, Grenada, Saint Lucia, Saint Vincent and the Grenadines, Antigua and Barbuda, Saint Kitts and Nevis, Monaco, Liechtenstein, Andorra, San Marino), so their lists are built by hand in `scripts/leader-lists.mjs` (RT-04, November 2026): each entry read from at least two of Wikidata, Wikipedia's lists and rulers.org, with its Wikidata id, from the state's first day (independence; 1926 for the four European microstates; Montenegro from its independence on 3 June 2006, nine days before its first day on the map, as Archigos starts Kosovo, Czechia and Slovakia) to the present. `node scripts/leader-corrections.mjs` then `node scripts/build-parties.mjs <their GW codes>` applies them to `data/countries.json`. The choices made there:
-  - The ten microstates have no border in CShapes, so the map never draws them; their panel opens from search or an address such as `#y=2020&c=331`, and the table (states on the map) leaves them out.
+- Archigos has no record of Montenegro after 1918 or of the ten microstates (Dominica, Grenada, Saint Lucia, Saint Vincent and the Grenadines, Antigua and Barbuda, Saint Kitts and Nevis, Monaco, Liechtenstein, Andorra, San Marino), so their lists are built by hand in `scripts/leader-lists.mjs` (RT-04, November 2026): each entry read from at least two of Wikidata, Wikipedia's lists and rulers.org, with its Wikidata id, from the state's first day (independence; 1926 for the four European microstates; Montenegro from its independence on 3 June 2006, nine days before its first day on the map, as Archigos starts Kosovo, Czechia and Slovakia) to the present. `node scripts/leader-corrections.mjs` then `node scripts/build-parties.mjs <their Wikidata keys, or their old GW codes>` applies them to `data/countries.json`. The choices made there:
+  - Cliopatria draws eight of the ten microstates (Monaco, Andorra and the six Caribbean states); Liechtenstein and San Marino have no row, so the map never draws them; their panel opens from search or an address such as `#y=2020&c=Q238`, and the table (states on the map) leaves them out.
   - The six Caribbean states and Montenegro follow the Prime Minister (the President, or the British monarch, is under "Also in office"). A Caribbean list starts on independence day, when the office of Prime Minister began; the same person's earlier years as Premier are not included. Montenegro's first entries (Đukanović, and Vujanović as President) start at independence, where Wikipedia's list splits Đukanović's term of 8 January 2003, so nothing from its years in Serbia and Montenegro shows.
   - Grenada from 1979 to 1984 follows those who held power: Bishop's People's Revolutionary Government (coup of 13 March 1979), Coard (from 14 October 1983), Austin's Revolutionary Military Council (from 19 October, removed by the US-led invasion), the Governor-General Paul Scoon as interim head of government, then Brathwaite's Interim Advisory Council, as Wikipedia's list does.
   - Monaco follows the Sovereign Prince, who holds executive power; Albert II is dated from his accession on 6 April 2005, not his regency from 31 March. The Minister of State is under "Also in office", with no party: an appointed official (Wikidata calls most of them "independent politician", which the page would list as a party in power). Two changes of Minister follow the Journal de Monaco's ordinances (15 January 1932, 31 May 1937); five others keep rulers.org's days where French Wikipedia differs by days and no official text was read.

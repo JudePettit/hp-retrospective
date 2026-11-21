@@ -1,15 +1,19 @@
 // Adds party affiliation to every leader and office-holder in data/countries.json.
 //   node scripts/build-parties.mjs              every state
-//   node scripts/build-parties.mjs 331 341      only these states (GW codes); everyone else's tags stay as they are
+//   node scripts/build-parties.mjs Q238 Q236    only these states (their Wikidata keys, as countries.mjs gives them;
+//                                               an old Gleditsch and Ward number is read through OLD_KEYS); everyone
+//                                               else's tags stay as they are
 // Each person's English Wikipedia article is resolved to Wikidata; "member of political party" (P102)
 // memberships that overlap their time in office become `parties: [{ name, url }]`.
 import { readFileSync, writeFileSync } from 'node:fs';
+import { OLD_KEYS } from './countries.mjs';
 
 const FILE = new URL('../data/countries.json', import.meta.url);
 const data = JSON.parse(readFileSync(FILE, 'utf8'));
 const UA = { 'User-Agent': process.env.BUILD_UA || 'JDP-I H&P Retrospective (https://hp-retrospective.pages.dev)' };
-const ONLY = new Set(process.argv.slice(2).map(Number));
-const states = Object.entries(data.countries).filter(([gw]) => !ONLY.size || ONLY.has(+gw)).map(([, c]) => c);
+const ONLY = new Set(process.argv.slice(2).map(a => OLD_KEYS[a] || a));
+for (const k of ONLY) if (!data.countries[k]) throw new Error(`build-parties: no state ${k}`);
+const states = Object.entries(data.countries).filter(([key]) => !ONLY.size || ONLY.has(key)).map(([, c]) => c);
 const titleOf = url => url && url.includes('/wiki/') ? decodeURIComponent(url.split('/wiki/')[1]).replace(/_/g, ' ') : null;
 const chunks = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, i * n + n));
 const sleep = ms => new Promise(r => setTimeout(r, ms));

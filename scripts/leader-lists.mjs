@@ -5,7 +5,7 @@
 //
 // Each list follows the state's effective leader, Archigos's rule (README, Known limits), from the state's first day
 // (independence, or 1926 for the four European microstates independent before it; Montenegro from its independence,
-// 3 June 2006, nine days before its first day on the map) to the present. A first entry starts on that day, as
+// 3 June 2006) to the present. The lists are keyed by each state's Wikidata item, as countries.mjs keys them. A first entry starts on that day, as
 // Archigos starts Kosovo, Czechia and Slovakia, except before 1926, where it keeps the day its holder took the office
 // (the page starts in 1926 and shows no event before it). The other office goes
 // under "Also in office" (`offices`, which replaces what Wikidata's head-of-state and head-of-government statements gave
@@ -69,7 +69,7 @@ export const LISTS = {
   // from the same day. Wikidata (Q2353252) and Wikipedia agree on every later date; Wikidata's statement on Montenegro
   // itself (P6) ends his terms on 10 October 2006 and 21 December 2010, against 10 November 2006 and 29 December 2010
   // in both.
-  341: {
+  Q236: {
     leaders: chain([
       ['2006-06-03', 'Milo Đukanović|Q200305|='],
       ['2006-11-10', 'Željko Šturanović|Q356556|='],
@@ -94,7 +94,7 @@ export const LISTS = {
   // kept, and written into the README's known limits). Pierre Charles acted from Douglas's death
   // on 1 October 2000 (Wikipedia's list, rulers.org; Wikidata dates him from 3 October). Wikidata ends Riviere's term on
   // 8 August 2004; he acted for two days, to 8 January.
-  54: {
+  Q784: {
     leaders: chain([
       ['1978-11-03', 'Patrick John|Q1281003|=', { end: '1979-06-21' }],
       ['1979-06-25', 'Oliver Seraphin|Q324474|='],
@@ -133,7 +133,7 @@ export const LISTS = {
   // out Coard and Scoon; rulers.org ends Bishop on 19 October and starts Brathwaite on 15 November (acting).
   // Brathwaite's Interim Advisory Council was non-party (Wikipedia's list: independent; his National Democratic
   // Congress was founded in 1987), so that term carries no party (second reader, 16 November 2026).
-  55: {
+  Q769: {
     leaders: chain([
       ['1974-02-07', 'Eric Gairy|Q203046|=', { exit: 'Irregular' }],
       ['1979-03-13', 'Maurice Bishop|Q468234|=', IRREGULAR],
@@ -161,7 +161,7 @@ export const LISTS = {
   // reader, 16 November 2026). Compton's article says he "temporarily resumed power" in early June 2007 to reshuffle
   // the cabinet; that is not a separate entry. Chastanet left on 28 July 2021 (Wikipedia, rulers.org; Wikidata:
   // 26 July).
-  56: {
+  Q760: {
     leaders: chain([
       ['1979-02-22', 'John Compton|Q716020|='],
       ['1979-07-02', 'Allan Louisy|Q966659|='],
@@ -181,7 +181,7 @@ export const LISTS = {
   // Saint Vincent and the Grenadines: Prime Minister from independence, 27 October 1979. Gonsalves took office on
   // 29 March 2001 (Wikipedia, rulers.org; Wikidata: 28 March) and Friday on 28 November 2025 (Wikipedia, rulers.org;
   // Wikidata has no end for Gonsalves yet).
-  57: {
+  Q757: {
     leaders: chain([
       ['1979-10-27', 'Milton Cato|Q165402|='],
       ['1984-07-30', 'James Fitz-Allen Mitchell|Q1281056|=', { name: 'Mitchell' }],
@@ -192,7 +192,7 @@ export const LISTS = {
     offices: realm('1979-10-27')
   },
   // Antigua and Barbuda: Prime Minister from independence, 1 November 1981 (Wikidata and rulers.org agree).
-  58: {
+  Q781: {
     leaders: chain([
       ['1981-11-01', 'Vere Bird|Q561911|='],
       ['1994-03-09', 'Lester Bird|Q365451|='],
@@ -205,7 +205,7 @@ export const LISTS = {
   // (the government's biography at gov.kn, his office's release of 5 July 2012, rulers.org; Wikipedia's list and
   // Wikidata's end for Simmonds: 7 July; Wikidata's start for Douglas and his article: 6 July; second reader,
   // 16 November 2026).
-  60: {
+  Q763: {
     leaders: chain([
       ['1983-09-19', 'Kennedy Simmonds|Q953225|='],
       ['1995-07-04', 'Denzil Douglas|Q57738|='],
@@ -217,7 +217,7 @@ export const LISTS = {
   // Monaco: the Sovereign Prince, who holds executive power (the Minister of State, appointed by him, is under "Also in
   // office"). Dates from Wikidata (Q2457774) and rulers.org. Albert was regent from 31 March 2005 while Rainier III was
   // dying; he is dated from his accession on 6 April.
-  221: {
+  Q235: {
     leaders: chain([
       ['1922-06-26', 'Louis II|Q316543|Louis II of Monaco', DIED],
       ['1949-05-09', 'Rainier III|Q185025|Rainier III of Monaco', DIED],
@@ -273,7 +273,7 @@ export const LISTS = {
   // Hans-Adam II since 15 August 2004 (as National Analysis names him). The reigning Prince is then under "Also in
   // office", as head of state. Reigns from Wikipedia's "List of monarchs of Liechtenstein", rulers.org and Wikidata
   // (whose start for Johann II is the year 1858 only).
-  223: {
+  Q347: {
     leaders: chain([
       ['1858-11-12', 'Johann II|Q317016|Johann II of Liechtenstein', DIED],
       ['1929-02-11', 'Franz I|Q455890|Franz I of Liechtenstein'],
@@ -326,7 +326,7 @@ export const LISTS = {
   // Farrero" stands alone against the three others, so Ferrero stays. Heads of Government from Wikipedia's list, rulers.org
   // and Wikidata (Q634322), acting ones included; Wikidata ends Bartumeu on 12 May 2011 and leaves out the acting heads
   // of 2011 and 2015. rulers.org's acting head of April and May 2023 (Jordi Gallardo) is in neither of the others.
-  232: {
+  Q228: {
     leaders: chain([
       ['1923-12-17', 'Pere Font Altimir|Q68173609', { name: 'Font' }],
       ['1927-12-19', 'Roc Pallarès Rossell|Q68168956', { name: 'Pallarès', end: '1933-08-19' }],
@@ -403,7 +403,7 @@ export const LISTS = {
   // 27 October (the Secretary of State for Internal Affairs' notice of 23 October 1957, on the Great and General
   // Council's site; rulers.org: 23 October; Wikidata: 1 October). San Marino has no other head of state or government,
   // so nobody is under "Also in office".
-  331: {
+  Q238: {
     leaders: semesters([
     ['1925-10-01', 'Valerio Pasquali|Q98105684', 'Marco Marcucci|Q98105288'],
     ['1926-04-01', 'Manlio Gozi|Q98105280', 'Giuseppe Mularoni|Q98105221'],

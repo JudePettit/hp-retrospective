@@ -40,7 +40,7 @@ const swiss = (year, full) => P(full, `${year}-01-01`, year === 2026 ? null : `$
 export const CORRECTIONS = {
   // Guatemala: President. Pérez Molina resigned on 2 September 2015 (Archigos); Maldonado was sworn in the next day.
   // Arévalo's swearing-in ran past midnight into 15 January 2024 (Wikidata; Wikipedia's infobox notes it).
-  90: {
+  Q774: {
     from: '2015-09-03',
     leaders: [
       P('Alejandro Maldonado', '2015-09-03', '2016-01-14'),
@@ -51,7 +51,7 @@ export const CORRECTIONS = {
   },
   // Poland: President, as Archigos tracked from 1995. Archigos's surname "Kaczynski" (2005–2010) had been matched to
   // Jarosław; the president was his twin brother Lech, who died in office on 10 April 2010.
-  290: {
+  Q36: {
     from: '2015-08-06',
     edit: { '2005-12-23': { full: 'Lech Kaczyński', url: W('Lech Kaczyński') } },
     leaders: [
@@ -60,12 +60,12 @@ export const CORRECTIONS = {
     ]
   },
   // Slovakia: Prime Minister.
-  317: {
+  Q214: {
     from: '2023-10-25',
     leaders: [P('Robert Fico', '2023-10-25', null)]
   },
   // Moldova: Prime Minister, acting ones included as Archigos includes them.
-  359: {
+  Q217: {
     from: '2015-10-30',
     leaders: [
       P('Gheorghe Brega', '2015-10-30', '2016-01-20'),
@@ -83,7 +83,7 @@ export const CORRECTIONS = {
     ]
   },
   // Romania: President, as Archigos tracked from 2004 (acting presidents included, as in 2007 and 2012).
-  360: {
+  Q218: {
     from: '2014-12-21',
     leaders: [
       P('Klaus Iohannis', '2014-12-21', '2025-02-12'),
@@ -92,22 +92,22 @@ export const CORRECTIONS = {
     ]
   },
   // Israel: Prime Minister (a caretaker since 27 October 2026, still in office).
-  666: {
+  Q801: {
     from: '2022-12-29',
     leaders: [P('Benjamin Netanyahu', '2022-12-29', null)]
   },
   // Saudi Arabia: King. Salman is still on the throne; Archigos's last day (31 December 2015) is not an exit.
-  670: {
+  Q851: {
     edit: { '2015-01-23': { full: 'Salman of Saudi Arabia', url: W('Salman of Saudi Arabia'), end: null, exit: null, exitHow: null } }
   },
   // Jamaica: Prime Minister.
-  51: {
+  Q766: {
     from: '2016-03-03',
     edit: { '2012-01-05': { end: '2016-03-03' } },
     leaders: [P('Andrew Holness', '2016-03-03', null)]
   },
   // Switzerland: President of the Swiss Confederation (Wikidata P39; Wikipedia's list).
-  225: {
+  Q39: {
     from: '2016-01-01',
     edit: {
       '2015-01-01': { full: 'Simonetta Sommaruga', url: W('Simonetta Sommaruga'), end: '2015-12-31' },
@@ -128,7 +128,7 @@ export const CORRECTIONS = {
   // Wikipedia's article and its description): Kostas Karamanlis, not his uncle Konstantinos (1907-1998); George
   // Papandreou (born 1952), not his grandfather Georgios (1888-1968); Ioannis Grivas, the judge who led the 1989
   // caretaker government, not Theodoros Grivas (1797-1862).
-  350: {
+  Q41: {
     from: '2019-06-08',
     edit: {
       '2015-01-26': { end: '2019-07-08' },
@@ -143,12 +143,12 @@ export const CORRECTIONS = {
     ]
   },
   // Links that led to a disambiguation page (MI-10, 15 November 2026): the person's own article, checked that day.
-  42: { edit: { '1963-02-27': { url: W('Juan Bosch (politician)') } } },
-  367: { edit: { '2000-05-05': { url: W('Andris Bērziņš (prime minister)') } } },
-  385: { edit: { '1926-03-03': { url: W('Ivar Lykke (politician)') } } },
-  395: { edit: { '1963-11-14': { url: W('Bjarni Benediktsson (born 1908)') } } },
+  Q786: { edit: { '1963-02-27': { url: W('Juan Bosch (politician)') } } },
+  Q211: { edit: { '2000-05-05': { url: W('Andris Bērziņš (prime minister)') } } },
+  Q20: { edit: { '1926-03-03': { url: W('Ivar Lykke (politician)') } } },
+  Q189: { edit: { '1963-11-14': { url: W('Bjarni Benediktsson (born 1908)') } } },
   // RT-04: whole lists, each starting with its first entry.
-  ...Object.fromEntries(Object.entries(LISTS).map(([gw, l]) => [gw, { from: l.leaders[0].start, leaders: l.leaders, offices: l.offices }]))
+  ...Object.fromEntries(Object.entries(LISTS).map(([key, l]) => [key, { from: l.leaders[0].start, leaders: l.leaders, offices: l.offices }]))
 };
 
 const hasLetters = s => /\p{L}/u.test(s || '');
@@ -167,8 +167,9 @@ function renameArrival(c, l, old) {
   }
 }
 
-// Applies the corrections to one country record { leaders, events, offices } in place.
-export function correctCountry(gw, c) {
+// Applies the corrections to one country record { leaders, events, offices } in place; `key` is its Wikidata item
+// (countries.mjs), as CORRECTIONS is keyed.
+export function correctCountry(key, c) {
   // A label with no letters is no name (Greece's "9811205000"): the article's title stands in, here and in offices.
   for (const p of [...(c.leaders || []), ...(c.offices || [])]) {
     if (hasLetters(p.full) || !hasLetters(titleOf(p.url))) continue;
@@ -176,12 +177,12 @@ export function correctCountry(gw, c) {
     p.full = titleOf(p.url);
     if ('name' in p) { if (!hasLetters(p.name)) p.name = family(p.full); renameArrival(c, p, old); }
   }
-  const fix = CORRECTIONS[gw];
+  const fix = CORRECTIONS[key];
   if (!fix) return c;
   const leaders = c.leaders || [];
   for (const [start, fields] of Object.entries(fix.edit || {})) {
     const l = leaders.find(x => x.start === start);
-    if (!l) throw new Error(`leader-corrections: ${gw} has no leader starting ${start}`);
+    if (!l) throw new Error(`leader-corrections: ${key} has no leader starting ${start}`);
     const old = { full: l.full, name: l.name, url: l.url };
     Object.assign(l, fields);
     renameArrival(c, l, old);
@@ -213,7 +214,7 @@ export function correctCountry(gw, c) {
 }
 
 export function applyCorrections(countries) {
-  for (const [gw, c] of Object.entries(countries)) correctCountry(gw, c);
+  for (const [key, c] of Object.entries(countries)) correctCountry(key, c);
   correctElections(countries);
   return countries;
 }
@@ -224,7 +225,7 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
   const data = JSON.parse(readFileSync(FILE, 'utf8'));
   applyCorrections(data.countries);
   writeFileSync(FILE, JSON.stringify(data));
-  const ends = Object.entries(CORRECTIONS).map(([gw]) => { const l = data.countries[gw].leaders.at(-1); return `${data.countries[gw].name}: ${l.full} since ${l.start}`; });
+  const ends = Object.entries(CORRECTIONS).map(([key]) => { const l = data.countries[key].leaders.at(-1); return `${data.countries[key].name}: ${l.full} since ${l.start}`; });
   console.log(`leader corrections applied to ${ends.length} countries\n  ${ends.join('\n  ')}`);
-  console.log(`election corrections applied: ${ELECTIONS.map(e => `${e.title} (${data.countries[e.gw].name}, ${e.date})`).join('; ')}`);
+  console.log(`election corrections applied: ${ELECTIONS.map(e => `${e.title} (${data.countries[e.key].name}, ${e.date})`).join('; ')}`);
 }

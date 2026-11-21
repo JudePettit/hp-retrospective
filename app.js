@@ -1,10 +1,12 @@
-/* Political Retrospective (PRP · Retrospective Intelligence): who led each country, and which political events happened,
-   year by year. Borders: CShapes 2.0. Leaders: Archigos 4.1 + Wikidata. Events: derived + Wikidata elections.
+/* Political Retrospective (VM · Retrospective Intelligence): who led each country, and which political events happened,
+   year by year. Borders: Cliopatria v0.2.1 (CC BY 4.0), by the year, to 2024. Leaders: Archigos 4.1 + Wikidata.
+   Events: derived + Wikidata elections. States are keyed by their Wikidata item (data/countries.json, retro-countries/2).
    Map colours are CSS custom properties over PRP tokens (styles.css), written into SVG fills as var(...), so the map
    follows the light/dark theme without redrawing; the GIF export reads the same tokens when it draws.
    The years shown follow the timeline (prp-period.js, a copy of jdpi's design/prp-period.js): its start rests on the
    end, so one year is shown, as before; pulled back, it opens a period of years, and the map, panels, table, overview,
-   border animation and GIF cover every year of it. URL: #y=<year, or the period's last>[&f=<its first year>][&c=<gw>] */
+   border animation and GIF cover every year of it. URL: #y=<year, or the period's last>[&f=<its first year>][&c=<key>];
+   an old c=<Gleditsch and Ward number> opens the same state and is rewritten to its key (the data's oldKeys). */
 import { GIFEncoder, quantize, applyPalette } from 'https://cdn.jsdelivr.net/npm/gifenc@1.0.3/dist/gifenc.esm.js';
 import { displayName } from './names.mjs';
 
@@ -14,21 +16,30 @@ const TODAY = new Date().toISOString().slice(0, 10);
 const state = { year: 2026, from: 2026, selected: null, data: null, features: [], animating: false, view: 'map', sort: { key: 'name', dir: 1 } };
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const KIND = { leader: 'leader', coup: 'irregular', election: 'election', referendum: 'referendum', border: 'border', statehood: 'statehood' };
+const KIND = { leader: 'leader', coup: 'irregular', election: 'election', referendum: 'referendum', border: 'border' };
 
 let svg, g, projection, path, zoom;
 
 /* ---------------------------------------------------------------- data helpers */
 const dateFor = y => (y >= new Date().getUTCFullYear() ? TODAY : `${y}-12-31`);
-const activeOn = date => state.features.filter(f => f.properties.s <= date && date <= f.properties.e);
-const country = gw => state.data.countries[gw];
+const country = key => state.data.countries[key];
+// Cliopatria's rows are by the year and end in 2024 (bordersTo): a later year is drawn on 2024's rows.
+const held = y => Math.min(y, state.data.bordersTo);
+const rowsIn = y => state.features.filter(f => f.properties.f <= held(y) && held(y) <= f.properties.t);
+// The state a row stands for in a year (VM's crosswalk, written into the row as c, cf and ct), if any.
+const keyIn = (p, y) => (p.f <= y && y <= p.t && p.c && (p.cf == null || y >= p.cf) && (p.ct == null || y <= p.ct) ? p.c : null);
+// A state is covered on a date inside one of its spans (from its leader list, data/countries.json).
+const coveredOn = (key, date) => (country(key)?.spans || []).some(([s, e]) => s <= date && (!e || date <= e));
+// The covered state a drawn row stands for in year y: its state, while that state is covered.
+const stateOfRow = (f, y) => { const k = keyIn(f.properties, held(y)); return k && coveredOn(k, dateFor(y)) ? k : null; };
+const nameOf = (key, date) => displayName(key, country(key).name, date);
 // The years shown: one year (a === b) or a period [a, b]; every helper takes the period, b defaulting to a.
 const single = () => state.from === state.year;
 const span = (a = state.from, b = state.year) => (a === b ? String(b) : `${a}–${b}`);
 const inYears = (start, end, a, b = a) => start <= `${b}-12-31` && (!end || end >= `${a}-01-01`);
 
-function leadersIn(gw, a, b = a) {
-  return (country(gw)?.leaders || []).filter(l => inYears(l.start, l.end, a, b));
+function leadersIn(key, a, b = a) {
+  return (country(key)?.leaders || []).filter(l => inYears(l.start, l.end, a, b));
 }
 // Leaders in groups that took office together (the same first day, neither for a single day), in order: San Marino's
 // two Captains Regent, even when one leaves early (1930).
@@ -40,30 +51,30 @@ function coLeaders(leaders) {
 }
 const lastEnd = g => g.map(l => l.end || '9999-12-31').sort().at(-1);
 const andList = l => (l.length < 2 ? l.join('') : `${l.slice(0, -1).join(', ')} and ${l.at(-1)}`);
-function officesIn(gw, a, b, leaders) {
+function officesIn(key, a, b, leaders) {
   const names = new Set(leaders.map(l => (l.full || l.name).toLowerCase()));
-  return (country(gw)?.offices || []).filter(o => inYears(o.start, o.end, a, b) && !names.has((o.full || '').toLowerCase()));
+  return (country(key)?.offices || []).filter(o => inYears(o.start, o.end, a, b) && !names.has((o.full || '').toLowerCase()));
 }
-function eventsIn(gw, a, b = a) {
-  return (country(gw)?.events || []).filter(e => e.date >= `${a}-01-01` && e.date <= `${b}-12-31`);
+function eventsIn(key, a, b = a) {
+  return (country(key)?.events || []).filter(e => e.date >= `${a}-01-01` && e.date <= `${b}-12-31`);
 }
-// Dates when this country's borders changed in the years shown (new shapes starting after 1 January of the first).
-function borderChanges(gw, a, b = a) {
-  return state.features.filter(f => f.properties.gw === +gw && f.properties.s > `${a}-01-01` && f.properties.s <= `${b}-12-31`)
-    .map(f => f.properties.s).filter((d, i, l) => l.indexOf(d) === i).sort();
+// The years after the first of those shown in which this state's border in Cliopatria differs from the year before's
+// (its border events, by the year): the frames of the border animation.
+function borderChanges(key, a, b = a) {
+  return eventsIn(key, a, b).filter(e => e.type === 'border').map(e => +e.date.slice(0, 4)).filter((y, i, l) => y > a && l.indexOf(y) === i).sort((p, q) => p - q);
 }
 // The most significant thing that happened to a state in the years shown: an irregular seizure of power, else a new
-// leader, else a change of borders or status.
-function statusFor(gw, a, b = a) {
-  if (!country(gw)) return 'none';
-  const ev = eventsIn(gw, a, b);
+// leader, else a change of borders.
+function statusFor(key, a, b = a) {
+  if (!country(key)) return 'none';
+  const ev = eventsIn(key, a, b);
   if (ev.some(e => e.type === 'coup')) return 'irregular';
   if (ev.some(e => e.type === 'leader')) return 'change';
-  if (borderChanges(gw, a, b).length || ev.some(e => e.type === 'statehood')) return 'border';
+  if (ev.some(e => e.type === 'border')) return 'border';
   return 'steady';
 }
 const FILL = { irregular: 'var(--c-irregular)', change: 'var(--c-change)', border: 'var(--c-border)', steady: 'var(--c-steady)' };
-const STATUS_LABEL = { irregular: 'Irregular seizure of power', change: 'New leader', border: 'Border or status change', steady: 'No change' };
+const STATUS_LABEL = { irregular: 'Irregular seizure of power', change: 'New leader', border: 'Border change', steady: 'No change' };
 const fmt = d => {
   if (!d) return 'present';
   const [y, m, dd] = d.split('-').map(Number);
@@ -77,48 +88,53 @@ function partiesAt(p, a, b = a) {
 }
 const partyChips = (p, a, b = a) => partiesAt(p, a, b).map(m => `<a class="party" href="${esc(m.url)}" target="_blank" rel="noopener">${esc(m.name)}</a>`).join('');
 const wiki = (title) => `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`;
-const leaderLink = (l, gw) => l.url || `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(`${l.full || l.name} ${country(gw).name}`)}`;
-// Covered states active on a date, one per state, under the name they had then.
+const leaderLink = (l, key) => l.url || `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(`${l.full || l.name} ${country(key).name}`)}`;
+// Covered states on the map on a date, one per state, under the name they had then.
 function statesOn(date) {
-  const seen = new Map();
-  for (const f of activeOn(date)) {
-    const gw = f.properties.gw;
-    if (country(gw) && !seen.has(gw)) seen.set(gw, { gw, name: displayName(gw, f.properties.name, date) });
+  const y = +date.slice(0, 4), seen = new Map();
+  for (const f of rowsIn(y)) {
+    const key = stateOfRow(f, y);
+    if (key && !seen.has(key)) seen.set(key, { key, name: nameOf(key, date) });
   }
   return [...seen.values()];
 }
-// Why a year's count is smaller than the coverage in the status line, worked out per country from the borders data
-// (CShapes 2.0). A covered country is counted in a year only while it has a border that year. Some have no border in
-// CShapes at all (the smallest states: Monaco, San Marino, six Caribbean islands…), so the map never draws them and no
-// year counts them, though they are covered for their leaders and events. The rest have borders only while they were
-// independent: before (not yet), after (no longer), or between two spells of independence (the Baltic states, 1940–91).
+// Why a year's count is smaller than the coverage in the status line, worked out per country. A covered country is
+// counted in a year while it is covered (its spans, from its leader list) and Cliopatria has a row for it. One that is
+// covered but has no row that year (San Marino and Liechtenstein in every year, Poland from 1944 to 1952…) is named:
+// VM cannot place it on a free border. The rest were not states then: before (not yet), after (no longer), or between
+// two spells of independence (the Baltic states, 1940–91).
 function coverageNote(y) {
   const date = dateFor(y), now = date === TODAY, when = now ? 'today' : `at the end of ${y}`;
-  const all = Object.keys(state.data.countries).map(Number), total = all.length;
-  const counted = new Set(statesOn(date).map(s => s.gw));
-  const later = [], earlier = [], between = [], noBorder = [];
-  for (const gw of all) {
-    if (counted.has(gw)) continue;
-    const fs = state.features.filter(f => f.properties.gw === gw).map(f => f.properties);
-    if (!fs.length) noBorder.push(country(gw).name);
-    else if (fs.every(p => p.s > date)) later.push(gw);
-    else if (fs.every(p => p.e < date)) earlier.push(gw);
-    else between.push(gw);
+  const all = Object.keys(state.data.countries), total = all.length;
+  const counted = new Set(statesOn(date).map(s => s.key));
+  const later = [], earlier = [], between = [], unplaced = [];
+  for (const key of all) {
+    if (counted.has(key)) continue;
+    const spans = country(key).spans || [];
+    if (coveredOn(key, date)) unplaced.push(nameOf(key, date));
+    else if (spans.every(([s]) => s > date)) later.push(key);
+    else if (spans.every(([, e]) => e && e < date)) earlier.push(key);
+    else between.push(key);
   }
-  const n = counted.size, m = later.length + earlier.length + between.length, k = noBorder.length;
+  const n = counted.size, m = later.length + earlier.length + between.length, k = unplaced.length;
   if (n === total) return `All ${total} countries covered over the years are on the map ${when}.`;
-  const names = l => (l.length < 2 ? l.join('') : `${l.slice(0, -1).join(', ')} and ${l.at(-1)}`);
   let out = `${n} of the ${total} countries covered over the years are on the map ${when}.`;
-  if (k) out += ` ${k === 1 ? 'One has' : `${k} have`} no border in CShapes 2.0, so the map does not draw ${k === 1 ? 'it' : 'them'} in any year: ${names(noBorder)}.`;
+  if (k) out += ` ${k} ${k === 1 ? 'is' : 'are'} covered in ${y}, but VM cannot place ${k === 1 ? 'it' : 'them'} on a free border for ${y}: ${andList(unplaced)}.`;
   if (m) {
     const verb = now ? (m === 1 ? 'is' : 'are') : (m === 1 ? 'was' : 'were'), what = m === 1 ? 'an independent state' : 'independent states';
     const kinds = [[later, 'not yet'], [earlier, 'no longer'], [between, 'between two spells of independence']].filter(([l]) => l.length);
     const head = `The other ${m === 1 ? 'one' : m} ${verb}`, then = now ? '' : ' then';
-    out += kinds.length > 1 ? ` ${head} not ${what}${then}: ${names(kinds.map(([l, w]) => `${l.length} ${w}`))}.`
+    out += kinds.length > 1 ? ` ${head} not ${what}${then}: ${andList(kinds.map(([l, w]) => `${l.length} ${w}`))}.`
       : kinds[0][1] === 'between two spells of independence' ? ` ${head} not ${what}${then}, between two spells of independence.`
         : ` ${head} ${kinds[0][1]} ${what}${then}.`;
   }
   return out;
+}
+// The years drawn on the last year of Cliopatria's rows (2025 and 2026), said where the map is described.
+function heldNote() {
+  const { bordersTo, lastYear } = state.data;
+  const after = Array.from({ length: Math.max(0, lastYear - bordersTo) }, (_, i) => bordersTo + 1 + i);
+  return after.length ? ` Cliopatria’s borders end in ${bordersTo}, so ${andList(after.map(String))} ${after.length > 1 ? 'are' : 'is'} drawn on the borders of ${bordersTo}.` : '';
 }
 // Resolve a colour (a token, var() or color-mix()) to rgb() for drawing on a canvas.
 function cssColor(value) {
@@ -133,7 +149,7 @@ function cssColor(value) {
 /* ---------------------------------------------------------------- map */
 function drawMap() {
   svg = d3.select('#map').attr('viewBox', `0 0 ${W} ${H}`).attr('preserveAspectRatio', 'xMidYMid meet');
-  projection = d3.geoNaturalEarth1().fitExtent([[10, 10], [W - 10, H - 10]], { type: 'FeatureCollection', features: activeOn(TODAY) });
+  projection = d3.geoNaturalEarth1().fitExtent([[10, 10], [W - 10, H - 10]], { type: 'FeatureCollection', features: rowsIn(state.data.bordersTo) });
   path = d3.geoPath(projection);
   g = svg.append('g');
   zoom = d3.zoom().scaleExtent([1, 40]).interpolate(d3.interpolate).on('zoom', ev => g.attr('transform', ev.transform));
@@ -160,34 +176,35 @@ function focusBounds([[x0, y0], [x1, y1]], duration = 700, edges = false) {
   if (duration) svg.transition().duration(duration).call(zoom.transform, t); else svg.call(zoom.transform, t);
 }
 
-// The map on a date (the end of the years shown, or a frame of the border animation), each covered state coloured by
-// what happened to it in the years shown.
-function renderMap(date = dateFor(state.year)) {
-  const a = state.from, b = state.year;
-  // Covered states after the rest, so their outlines sit above their neighbours'; the selected state on top.
-  const rank = d => (country(d.properties.gw) ? (d.properties.gw === state.selected ? 2 : 1) : 0);
-  const shapes = activeOn(date).sort((a, b) => rank(a) - rank(b));
+// The map in year y (the end of the years shown, or a frame of the border animation), each covered state coloured by
+// what happened to it in the years shown. Cliopatria's rows can overlap (its French Fifth Republic takes in Algeria,
+// which has a row of its own), so the larger are drawn first and the smaller sit on top; the selected state last.
+function renderMap(y = state.year) {
+  const a = state.from, b = state.year, date = dateFor(y);
+  const key = d => stateOfRow(d, y);
+  const on = d => key(d) && key(d) === state.selected;
+  const shapes = rowsIn(y).sort((p, q) => on(p) - on(q) || q.properties.a - p.properties.a);
   const tip = $('#tooltip');
   g.selectAll('path.shape')
-    .data(shapes, d => `${d.properties.gw}|${d.properties.s}`)
+    .data(shapes, d => d.properties.id)
     .join('path')
     .attr('d', path)
-    .attr('class', d => `shape ${country(d.properties.gw) ? 'active' : 'inactive'}${d.properties.gw === state.selected ? ' selected' : ''}`)
-    .attr('data-gw', d => d.properties.gw)
-    .attr('fill', d => FILL[statusFor(d.properties.gw, a, b)] || null)
+    .attr('class', d => `shape ${key(d) ? 'active' : 'inactive'}${on(d) ? ' selected' : ''}`)
+    .attr('data-key', d => key(d))
+    .attr('fill', d => (key(d) ? FILL[statusFor(key(d), a, b)] : null))
     .on('mousemove', (ev, d) => {
       const box = $('.map-stage').getBoundingClientRect();
-      const covered = country(d.properties.gw);
-      const ls = leadersIn(d.properties.gw, a, b), l = ls.at(-1);
-      const st = statusFor(d.properties.gw, a, b);
-      tip.innerHTML = `<strong>${esc(displayName(d.properties.gw, d.properties.name, date))}</strong>${covered ? (l ? esc(a === b || ls.length < 2 ? l.full || l.name : `${ls.length} leaders, last ${l.full || l.name}`) : 'Leader unknown') : 'Not covered'}` +
-        (covered ? `<span class="tip-sub"><span class="swatch" style="background:${FILL[st]}"></span>${STATUS_LABEL[st]} in ${span(a, b)}</span>` : '');
+      const k = key(d);
+      const ls = k ? leadersIn(k, a, b) : [], l = ls.at(-1);
+      const st = k ? statusFor(k, a, b) : null;
+      tip.innerHTML = `<strong>${esc(k ? nameOf(k, date) : d.properties.n)}</strong>${k ? (l ? esc(a === b || ls.length < 2 ? l.full || l.name : `${ls.length} leaders, last ${l.full || l.name}`) : 'Leader unknown') : 'Not covered'}` +
+        (k ? `<span class="tip-sub"><span class="swatch" style="background:${FILL[st]}"></span>${STATUS_LABEL[st]} in ${span(a, b)}</span>` : '');
       tip.hidden = false;
       tip.style.left = `${Math.max(8, Math.min(ev.clientX - box.left + 14, box.width - tip.offsetWidth - 8))}px`;
       tip.style.top = `${Math.max(8, Math.min(ev.clientY - box.top + 14, box.height - tip.offsetHeight - 8))}px`;
     })
     .on('mouseleave', () => { tip.hidden = true; })
-    .on('click', (ev, d) => { if (country(d.properties.gw)) select(d.properties.gw); })
+    .on('click', (ev, d) => { if (key(d)) select(key(d)); })
     .order();
 }
 
@@ -197,7 +214,7 @@ function renderPanel() {
   const panel = $('#panel');
   if (!state.selected) {
     const all = Object.entries(state.data.countries)
-      .flatMap(([gw, c]) => eventsIn(gw, a, y).map(e => ({ ...e, gw, cname: c.name })))
+      .flatMap(([key, c]) => eventsIn(key, a, y).map(e => ({ ...e, key, cname: c.name })))
       .sort((p, q) => p.date.localeCompare(q.date));
     const count = (...types) => all.filter(e => types.includes(e.type)).length;
     panel.innerHTML = `<h2>${when}</h2>
@@ -206,38 +223,42 @@ function renderPanel() {
         <div class="prp-kpi"><span>Leader changes</span><b>${count('leader', 'coup')}</b></div>
         <div class="prp-kpi"><span>Irregular seizures</span><b>${count('coup')}</b></div>
         <div class="prp-kpi"><span>Elections, referendums</span><b>${count('election', 'referendum')}</b></div>
-        <div class="prp-kpi"><span>Border or status changes</span><b>${count('border', 'statehood')}</b></div>
+        <div class="prp-kpi"><span>Border changes</span><b>${count('border')}</b></div>
       </div>
       <p class="note">${one ? 'Select a country to see who was in charge and its key events. Drag the slider or press ▶ to move through the years; drag its hollow start handle back to cover a period of years.' : `Everything recorded from ${a} to ${y}. Select a country to see who was in charge and its key events; bring the hollow start handle back onto the end for a single year.`}</p>
       <h3>Key events ${one ? `in ${y}` : when}${all.length > 120 ? ` · the first 120 of ${all.length}` : ''}</h3>
-      ${all.length ? `<ul class="events">${all.slice(0, 120).map(e => eventItem(e, e.cname, e.gw)).join('')}</ul>` : '<p class="empty">No recorded events.</p>'}`;
-    panel.querySelectorAll('[data-open]').forEach(a => a.onclick = ev => { ev.preventDefault(); select(+a.dataset.open); });
+      ${all.length ? `<ul class="events">${all.slice(0, 120).map(e => eventItem(e, e.cname, e.key)).join('')}</ul>` : '<p class="empty">No recorded events.</p>'}`;
+    panel.querySelectorAll('[data-open]').forEach(a => a.onclick = ev => { ev.preventDefault(); select(a.dataset.open); });
     return;
   }
-  const gw = state.selected;
-  const c = country(gw);
-  const shape = activeOn(dateFor(y)).find(f => f.properties.gw === gw);
-  const leaders = leadersIn(gw, a, y);
-  const offices = officesIn(gw, a, y, leaders);
-  const events = eventsIn(gw, a, y);
-  const changes = borderChanges(gw, a, y);
+  const key = state.selected;
+  const c = country(key);
+  const date = dateFor(y);
+  const placed = statesOn(date).some(s => s.key === key);
+  const leaders = leadersIn(key, a, y);
+  const offices = officesIn(key, a, y, leaders);
+  const events = eventsIn(key, a, y);
+  const changes = borderChanges(key, a, y);
   // Wikipedia's "<year> in <country>" events are read for one year; over a period, its year pages are linked instead.
   const page = one && c.yearPages.includes(y) ? `${y} in ${c.yearPage}` : null;
   const pages = one ? [] : c.yearPages.filter(p => p >= a && p <= y).map(p => `${p} in ${c.yearPage}`);
   const ruling = new Map();
   for (const p of [...leaders, ...offices]) for (const m of partiesAt(p, a, y)) ruling.set(m.url, m);
-  const name = shape ? displayName(gw, shape.properties.name, dateFor(y)) : c.name;
+  const name = nameOf(key, date);
+  // Cliopatria gives one border a year, so a change within a single year cannot be played; over a period, the years
+  // in which the border differs from the year before are played one after another.
+  const changedInYear = one && events.some(e => e.type === 'border');
 
   panel.innerHTML = `<button class="close" type="button" id="close" aria-label="Close">✕</button>
     <h2>${esc(name)}</h2>
-    <p class="sub">${shape ? when : state.features.some(f => f.properties.gw === gw) ? `Not an independent state at the end of ${y}` : `${when} · Not drawn on the map: no border in CShapes 2.0`}</p>
+    <p class="sub">${placed ? when : coveredOn(key, date) ? `${when} · VM cannot place ${esc(name)} on a free border for ${y}, so the map does not draw it` : `Not an independent state at the end of ${y}`}</p>
     <h3>Political overview of ${when}</h3>
     <p class="overview">${esc(overviewText(name, a, y, leaders, offices, events, [...ruling.values()]))}</p>
     <div id="wiki-events" class="wiki-events">${page ? '<p class="empty">Loading events from Wikipedia…</p>' : pages.length ? `<p class="note">Wikipedia, year by year: ${pages.map(p => `<a href="${wiki(p)}" target="_blank" rel="noopener">${esc(p.slice(0, 4))}</a>`).join(' · ')}</p>` : ''}</div>
     ${ruling.size ? `<h3>Parties in power ${one ? `in ${y}` : when}</h3><div class="parties">${[...ruling.values()].map(m => `<a class="party" href="${esc(m.url)}" target="_blank" rel="noopener">${esc(m.name)}</a>`).join('')}</div><p class="note" style="margin-top:6px">Party of each leader in office, from Wikidata. Where Wikidata has no membership dates, every party the person belonged to is shown.</p>` : ''}
     <h3>In charge during ${when}</h3>
     ${leaders.length ? leaders.map(l => `<div class="leader">
-        <div class="who"><a href="${esc(leaderLink(l, gw))}" target="_blank" rel="noopener">${esc(l.full || l.name)}</a>${l.entry === 'Irregular' ? '<span class="tag irregular">irregular entry</span>' : ''}</div>
+        <div class="who"><a href="${esc(leaderLink(l, key))}" target="_blank" rel="noopener">${esc(l.full || l.name)}</a>${l.entry === 'Irregular' ? '<span class="tag irregular">irregular entry</span>' : ''}</div>
         <div class="meta">${fmt(l.start)} – ${fmt(l.end)}${l.entry && l.entry !== 'Regular' && l.entry !== 'Irregular' ? ` · entry: ${esc(l.entry)}` : ''}${l.exit && l.exit !== 'Regular' ? ` · exit: ${esc(l.exit)}` : ''}</div>
         ${partyChips(l, a, y) ? `<div class="parties">${partyChips(l, a, y)}</div>` : ''}
       </div>`).join('') : `<p class="empty">No leader recorded for ${one ? 'this year' : 'these years'}.</p>`}
@@ -247,17 +268,20 @@ function renderPanel() {
         ${partyChips(o, a, y) ? `<div class="parties">${partyChips(o, a, y)}</div>` : ''}</div>`).join('')}` : ''}
     <h3>Key events ${one ? `in ${y}` : when}</h3>
     ${events.length ? `<ul class="events">${events.map(e => eventItem(e)).join('')}</ul>` : `<p class="empty">No recorded events ${one ? 'this year' : 'in these years'}.</p>`}
-    ${changes.length ? `<h3>Border changes ${one ? `in ${y}` : when}</h3>
-      <p class="sub">${changes.length} change${changes.length > 1 ? 's' : ''}: ${changes.map(fmt).join(', ')}</p>
+    ${changedInYear ? `<h3>Border changes in ${y}</h3>
+      <p class="note">Cliopatria gives borders by the year, so VM cannot show when within ${y} they changed: the map shows ${esc(/s$/.test(name) ? `${name}’` : `${name}’s`)} border for ${y}, which differs from ${y - 1}’s.</p>` : ''}
+    ${changes.length ? `<h3>Border changes ${when}</h3>
+      <p class="sub">${changes.length} year${changes.length > 1 ? 's' : ''} in which Cliopatria’s border differs from the year before’s: ${changes.join(', ')}</p>
       <div class="actions"><button class="prp-btn sm primary" id="animate" type="button">▶ Play ${when} border changes</button>
-      <button class="prp-btn sm" id="gif" type="button">⤓ Download GIF</button></div>` : ''}
+      <button class="prp-btn sm" id="gif" type="button">⤓ Download GIF</button></div>
+      <p class="note">Year by year: Cliopatria gives borders by the year, so a change within a year is not shown.</p>` : ''}
     ${page ? `<p class="note">More: <a href="${wiki(page)}" target="_blank" rel="noopener">${esc(page)}</a> on Wikipedia</p>` : ''}
     ${c.iso3 ? `<p class="note">Today: <a href="https://political-atlas.pages.dev/#${c.iso3}" target="_blank" rel="noopener">${esc(c.name)} in Political Atlas</a></p>` : ''}`;
   $('#close').onclick = () => select(null);
-  if (page) loadWikiEvents(page, gw, y);
+  if (page) loadWikiEvents(page, key, y);
   if (changes.length) {
-    $('#animate').onclick = () => animateYear(gw, a, y, changes);
-    $('#gif').onclick = () => downloadGif(gw, a, y, changes);
+    $('#animate').onclick = () => animateYears(key, a, y, changes);
+    $('#gif').onclick = () => downloadGif(key, a, y, changes);
   }
 }
 
@@ -281,14 +305,14 @@ function overviewText(name, a, y, leaders, offices, events, ruling) {
   if (count('coup')) ev.push(`${count('coup')} irregular seizure${count('coup') > 1 ? 's' : ''} of power`);
   if (count('election')) ev.push(`${count('election')} election${count('election') > 1 ? 's' : ''}`);
   if (count('referendum')) ev.push(`${count('referendum')} referendum${count('referendum') > 1 ? 's' : ''}`);
-  if (count('statehood') || count('border')) ev.push('changes to its borders or status');
+  if (count('border')) ev.push('changes to its borders');
   if (ev.length) parts.push(`The ${one ? 'year' : 'period'} saw ${ev.join(', ')}.`);
   return parts.join(' ') || `No leadership data is recorded for ${name} in ${one ? y : `${a}–${y}`}.`;
 }
 
 // The first few items of the "Events" section of Wikipedia's "<year> in <country>" article.
 const wikiCache = new Map();
-async function loadWikiEvents(page, gw, y) {
+async function loadWikiEvents(page, key, y) {
   const box = $('#wiki-events');
   try {
     if (!wikiCache.has(page)) {
@@ -297,7 +321,7 @@ async function loadWikiEvents(page, gw, y) {
       const pages = Object.values((await res.json()).query?.pages || {});
       wikiCache.set(page, eventsFromExtract(pages[0]?.extract || ''));
     }
-    if (state.selected !== gw || state.year !== y || !single() || !$('#wiki-events')) return;
+    if (state.selected !== key || state.year !== y || !single() || !$('#wiki-events')) return;
     const items = wikiCache.get(page);
     box.innerHTML = items.length
       ? `<ul class="wiki-list">${items.map(t => `<li>${esc(t)}</li>`).join('')}</ul><p class="note">From <a href="${wiki(page)}" target="_blank" rel="noopener">${esc(page)}</a>, Wikipedia (CC BY-SA)</p>`
@@ -315,27 +339,27 @@ function eventsFromExtract(text) {
     .slice(0, 6);
 }
 
-function eventItem(e, cname, gw) {
-  const label = cname ? `<a href="#" data-open="${gw}">${esc(displayName(+gw, cname, e.date))}</a>: ` : '';
+function eventItem(e, cname, key) {
+  const label = cname ? `<a href="#" data-open="${esc(key)}">${esc(displayName(key, cname, e.date))}</a>: ` : '';
   const text = e.url ? `<a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.text)}</a>` : esc(e.text);
-  // Wikidata often records only the year of an election; show just the year then.
-  const when = /^(election|referendum)$/.test(e.type) && e.date.endsWith('-01-01') ? e.date.slice(0, 4) : fmt(e.date);
+  // Wikidata often records only the year of an election, and Cliopatria's borders are by the year: show just the year.
+  const when = e.precision === 'year' || (/^(election|referendum)$/.test(e.type) && e.date.endsWith('-01-01')) ? e.date.slice(0, 4) : fmt(e.date);
   return `<li data-type="${e.type}"><time>${when}<span class="kind">${KIND[e.type] || e.type}</span></time>${label}${text}</li>`;
 }
 
-/* ---------------------------------------------------------------- border animation: the year's, or the period's */
-async function animateYear(gw, a, y, changes) {
+/* ---------------------------------------------------------------- border animation: the period's, year by year */
+async function animateYears(key, a, y, changes) {
   if (state.animating) return;
   state.animating = true;
   period.stop();
-  const frames = [`${a}-01-01`, ...changes];
+  const frames = [a, ...changes];
   const label = $('#anim-label');
   label.hidden = false;
-  zoomToCountry(gw, frames);
+  zoomToCountry(key, frames);
   for (let round = 0; round < 2; round++) {
-    for (const d of frames) {
-      label.textContent = fmt(d);
-      renderMap(d);
+    for (const f of frames) {
+      label.textContent = f > state.data.bordersTo ? `${f} (borders of ${state.data.bordersTo})` : String(f);
+      renderMap(f);
       await new Promise(r => setTimeout(r, 1300));
     }
   }
@@ -344,29 +368,41 @@ async function animateYear(gw, a, y, changes) {
   state.animating = false;
 }
 
-function countryShapes(gw, dates) {
-  return state.features.filter(f => f.properties.gw === gw && dates.some(d => f.properties.s <= d && d <= f.properties.e));
+// The rows that stand for a state in any of the years given.
+function countryShapes(key, years) {
+  return state.features.filter(f => years.some(y => keyIn(f.properties, held(y)) === key));
 }
-function zoomToCountry(gw, dates) {
-  const shapes = countryShapes(gw, dates);
+// The state's main body: its largest pieces, together nine tenths of its area. Cliopatria's rows carry far-off
+// fragments (its United States row of 1967–2005 holds pieces in Indochina, Micronesia and Berlin), which would stretch
+// the box round the world.
+function mainBody(shapes) {
+  const parts = shapes.flatMap(f => (f.geometry?.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry?.type === 'MultiPolygon' ? f.geometry.coordinates : []))
+    .map(coordinates => ({ type: 'Polygon', coordinates })).map(g => [d3.geoArea(g), g]).sort((p, q) => q[0] - p[0]);
+  const total = d3.sum(parts, p => p[0]), kept = [];
+  let sum = 0;
+  for (const [a, g] of parts) { if (kept.length && sum >= total * 0.9) break; kept.push(g); sum += a; }
+  return { type: 'GeometryCollection', geometries: kept };
+}
+function zoomToCountry(key, years) {
+  const shapes = countryShapes(key, years);
   if (!shapes.length) return;
-  let [[x0, y0], [x1, y1]] = d3.geoBounds({ type: 'FeatureCollection', features: shapes });
+  let [[x0, y0], [x1, y1]] = d3.geoBounds(mainBody(shapes));
   // The map is not rotated, so a box must stay between -180 and 180 or its corner projects on the far side of the
-  // map. A state across the 180th meridian (the Soviet Union / Russia, by Chukotka) has its west edge east of its
-  // east edge: its main body, west edge to 180, is framed. The padding stops at the map's edges (Alaska, Canada).
-  if (x0 > x1) x1 = 180;
+  // map. A state across the 180th meridian has its west edge east of its east edge: the wider side is framed (for the
+  // Soviet Union / Russia, by Chukotka, its west edge to 180). The padding stops at the map's edges (Alaska, Canada).
+  if (x0 > x1) { if (180 - x0 >= x1 + 180) x1 = 180; else x0 = -180; }
   // North and south, at most half the state's own height: a state far wider than tall (Russia) is not pulled south.
   const pad = Math.max(6, (x1 - x0) * 0.5), padY = Math.min(pad / 2, Math.max(3, (y1 - y0) * 0.5));
   if (x1 - x0 < 180) focusBounds([[Math.max(-180, x0 - pad), Math.max(-90, y0 - padY)], [Math.min(180, x1 + pad), Math.min(90, y1 + padY)]], 700, true);
 }
 
-async function downloadGif(gw, a, y, changes) {
+async function downloadGif(key, a, y, changes) {
   const btn = $('#gif');
   btn.disabled = true; btn.textContent = 'Rendering…';
   try {
     const w = 720, h = 480;
-    const frames = [`${a}-01-01`, ...changes];
-    const shapes = countryShapes(gw, frames);
+    const frames = [a, ...changes];
+    const shapes = countryShapes(key, frames);
     const proj = d3.geoMercator().fitExtent([[40, 64], [w - 40, h - 40]], { type: 'FeatureCollection', features: shapes });
     const canvas = Object.assign(document.createElement('canvas'), { width: w, height: h });
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -381,21 +417,21 @@ async function downloadGif(gw, a, y, changes) {
     const css = getComputedStyle(document.documentElement);
     const serif = css.getPropertyValue('--prp-font-serif').trim() || 'serif';
     const mono = css.getPropertyValue('--prp-font-mono').trim() || 'monospace';
-    for (const d of frames) {
+    for (const yr of frames) {
       ctx.fillStyle = C.water; ctx.fillRect(0, 0, w, h);
-      for (const f of activeOn(d)) {
-        const covered = country(f.properties.gw);
+      for (const f of rowsIn(yr).sort((p, q) => q.properties.a - p.properties.a)) {
+        const k = stateOfRow(f, yr);
         ctx.beginPath(); p(f);
-        ctx.fillStyle = f.properties.gw === gw ? C.focus : covered ? C.covered : C.land;
-        ctx.fill(); ctx.strokeStyle = covered ? C.halo : C.border; ctx.lineWidth = 1; ctx.stroke();
+        ctx.fillStyle = k === key ? C.focus : k ? C.covered : C.land;
+        ctx.fill(); ctx.strokeStyle = k ? C.halo : C.border; ctx.lineWidth = 1; ctx.stroke();
       }
       // Title band and source line, set like a figure.
       ctx.fillStyle = C.band; ctx.fillRect(0, 0, w, 48); ctx.fillRect(0, h - 28, w, 28);
       ctx.fillStyle = C.line; ctx.fillRect(0, 48, w, 1); ctx.fillRect(0, h - 29, w, 1);
       ctx.fillStyle = C.text; ctx.font = `600 22px ${serif}`;
-      ctx.fillText(`${displayName(gw, country(gw).name, d)} · ${fmt(d)}`, 20, 33);
+      ctx.fillText(`${nameOf(key, dateFor(yr))} · ${yr}`, 20, 33);
       ctx.fillStyle = C.muted; ctx.font = `12px ${mono}`;
-      ctx.fillText('Political Retrospective · PRP · borders: CShapes 2.0', 20, h - 10);
+      ctx.fillText('Political Retrospective · VM · borders: Cliopatria v0.2.1 (CC BY 4.0), by the year', 20, h - 10);
       const { data } = ctx.getImageData(0, 0, w, h);
       const palette = quantize(data, 64);
       gif.writeFrame(applyPalette(data, palette), w, h, { palette, delay: 1500 });
@@ -403,7 +439,7 @@ async function downloadGif(gw, a, y, changes) {
     gif.finish();
     const link = Object.assign(document.createElement('a'), {
       href: URL.createObjectURL(new Blob([gif.bytes()], { type: 'image/gif' })),
-      download: `${country(gw).name.replace(/\W+/g, '-')}-${a === y ? y : `${a}-${y}`}-borders.gif`
+      download: `${country(key).name.replace(/\W+/g, '-')}-${a === y ? y : `${a}-${y}`}-borders.gif`
     });
     link.click();
     setTimeout(() => URL.revokeObjectURL(link.href), 5000);
@@ -428,11 +464,11 @@ function renderTable() {
   const value = COLUMNS.find(col => col[0] === key)[2];
   const cmp = (a, b) => (a === b ? 0 : a === null ? 1 : b === null ? -1 : typeof a === 'number' ? a - b : String(a).localeCompare(String(b)));
   const rows = statesOn(dateFor(y))
-    .map(r => ({ ...r, leaders: leadersIn(r.gw, a, y), status: statusFor(r.gw, a, y), events: eventsIn(r.gw, a, y).length }))
+    .map(r => ({ ...r, leaders: leadersIn(r.key, a, y), status: statusFor(r.key, a, y), events: eventsIn(r.key, a, y).length }))
     .sort((p, q) => cmp(value(p), value(q)) * dir || p.name.localeCompare(q.name));
   table.tHead.innerHTML = `<tr>${COLUMNS.map(([k, label, , cls]) => `<th scope="col"${cls ? ` class="${cls}"` : ''}${k === key ? ` aria-sort="${dir > 0 ? 'ascending' : 'descending'}"` : ''}>` +
     `<button type="button" class="sort" data-sort="${k}">${typeof label === 'function' ? label() : label}<span class="arrow" aria-hidden="true">${k === key ? (dir > 0 ? '↑' : '↓') : '↕'}</span></button></th>`).join('')}</tr>`;
-  table.tBodies[0].innerHTML = rows.map(r => `<tr data-gw="${r.gw}"${r.gw === state.selected ? ' class="selected"' : ''}>
+  table.tBodies[0].innerHTML = rows.map(r => `<tr data-key="${esc(r.key)}"${r.key === state.selected ? ' class="selected"' : ''}>
       <td><button type="button" class="row-link">${esc(r.name)}</button></td>
       <td>${r.leaders.length ? coLeaders(r.leaders).map(g => esc(andList(g.map(l => l.full || l.name)))).join(' → ') : '<span class="cell-sub">No leader recorded</span>'}</td>
       <td><span class="cell-status"><span class="swatch" style="background:${FILL[r.status]}"></span>${STATUS_LABEL[r.status]}</span></td>
@@ -443,7 +479,7 @@ function renderTable() {
 function markTableRow() {
   const wrap = $('.table-wrap');
   document.querySelectorAll('#year-table tbody tr').forEach(tr => {
-    const on = +tr.dataset.gw === state.selected;
+    const on = tr.dataset.key === state.selected;
     tr.classList.toggle('selected', on);
     // Bring the selected row into view (below the sticky header) if it is scrolled out of sight.
     if (on && state.view === 'table') {
@@ -463,7 +499,7 @@ function setupTable() {
     renderTable();
     table.querySelector(`[data-sort="${k}"]`).focus();
   };
-  table.tBodies[0].onclick = ev => { const tr = ev.target.closest('tr[data-gw]'); if (tr) select(+tr.dataset.gw); };
+  table.tBodies[0].onclick = ev => { const tr = ev.target.closest('tr[data-key]'); if (tr) select(tr.dataset.key); };
 }
 
 /* ---------------------------------------------------------------- views (tabs) */
@@ -499,8 +535,8 @@ function setupTabs() {
 
 function renderCaption() {
   const a = state.from, y = state.year;
-  $('#caption').textContent = `States and borders ${dateFor(y) === TODAY ? 'today' : `at the end of ${y}`}, each covered state coloured by what happened to it in ${a === y ? y : `the years ${a}–${y}`}. ` +
-    'Borders: CShapes 2.0; leaders: Archigos 4.1 and Wikidata.';
+  $('#caption').textContent = `States and borders ${dateFor(y) === TODAY ? 'today' : `in ${y}`}, each covered state coloured by what happened to it in ${a === y ? y : `the years ${a}–${y}`}. ` +
+    `Borders: Cliopatria v0.2.1, one border a year; leaders: Archigos 4.1 and Wikidata.${y > state.data.bordersTo ? heldNote() : ''}`;
   $('#legend-title').textContent = a === y ? 'This year' : 'In the period';
 }
 
@@ -537,13 +573,13 @@ function setupTimeline() {
 }
 
 /* ---------------------------------------------------------------- selection, URL, search */
-function select(gw) {
-  state.selected = gw;
+function select(key) {
+  state.selected = key;
   renderMap();
   renderPanel();
   markTableRow();
   writeHash();
-  if (gw) zoomToCountry(gw, [dateFor(state.year)]);
+  if (key) zoomToCountry(key, [state.year]);
 }
 function writeHash() {
   const f = PRPPeriod.rules.startParam(period.get());
@@ -561,35 +597,40 @@ function openSteps() {
   return PRPPeriod.rules.openSteps(period.get().stops.length, w);
 }
 // An f at or after the year, or unreadable, is a single year; an address with no year at all opens on the last two
-// (more on a phone: openSteps).
+// (more on a phone: openSteps). c is a state's Wikidata key; an old Gleditsch and Ward number (all digits) is read
+// through the data's oldKeys, and `old` says the address is to be rewritten with the key.
 function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
-  const y = +p.get('y') || state.data.lastYear; const c = +p.get('c');
-  return { y, f: PRPPeriod.rules.readStart(period.get().stops, p.get('f'), y, 'end', !p.get('y') && !p.get('f'), openSteps()), c: country(c) ? c : null,
-    m: PRPPeriod.rules.readMovement(p.get(PRPPeriod.MOVE_PARAM)) };
+  const y = +p.get('y') || state.data.lastYear;
+  const raw = p.get('c'), old = /^\d+$/.test(raw || '');
+  const c = old ? state.data.oldKeys?.[raw] ?? null : raw;
+  return { y, f: PRPPeriod.rules.readStart(period.get().stops, p.get('f'), y, 'end', !p.get('y') && !p.get('f'), openSteps()), c: c && country(c) ? c : null,
+    m: PRPPeriod.rules.readMovement(p.get(PRPPeriod.MOVE_PARAM)), old: old && !!(c && country(c)) };
 }
 
 function setupSearch() {
   const input = $('#search'), list = $('#search-results');
   const index = [];
-  for (const [gw, c] of Object.entries(state.data.countries)) {
-    index.push({ label: c.name, sub: 'Country', gw: +gw, year: null, key: c.name.toLowerCase() });
-    for (const l of c.leaders) index.push({ label: l.full || l.name, sub: `${c.name} · from ${l.start.slice(0, 4)}`, gw: +gw, year: Math.max(+l.start.slice(0, 4), state.data.firstYear), key: (l.full || l.name).toLowerCase() });
+  for (const [key, c] of Object.entries(state.data.countries)) {
+    index.push({ label: c.name, sub: 'Country', key, year: null, find: c.name.toLowerCase() });
+    for (const l of c.leaders) index.push({ label: l.full || l.name, sub: `${c.name} · from ${l.start.slice(0, 4)}`, key, year: Math.max(+l.start.slice(0, 4), state.data.firstYear), find: (l.full || l.name).toLowerCase() });
   }
+  // Cliopatria's own name for a row that stands for a covered state, where it differs (Weimar Republic, Francoist Spain).
   for (const f of state.features) {
-    const c = country(f.properties.gw);
-    if (c && f.properties.name !== c.name) index.push({ label: f.properties.name, sub: `Historical name · ${f.properties.s.slice(0, 4)}`, gw: f.properties.gw, year: Math.max(+f.properties.s.slice(0, 4), state.data.firstYear), key: f.properties.name.toLowerCase() });
+    const p = f.properties, c = p.c && country(p.c);
+    const from = Math.max(p.f, p.cf ?? p.f, state.data.firstYear);
+    if (c && p.n !== c.name) index.push({ label: p.n, sub: `Name in Cliopatria · from ${from}`, key: p.c, year: from, find: p.n.toLowerCase() });
   }
   let results = [], active = 0;
   const choose = r => {
     input.value = ''; list.hidden = true;
     if (r.year) setPeriod(null, r.year, { push: false });
-    select(r.gw);
+    select(r.key);
   };
   input.addEventListener('input', () => {
     const q = input.value.trim().toLowerCase();
     const seen = new Set();
-    results = q.length < 2 ? [] : index.filter(r => r.key.includes(q)).filter(r => { const k = r.label + r.sub; if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 12);
+    results = q.length < 2 ? [] : index.filter(r => r.find.includes(q)).filter(r => { const k = r.label + r.sub; if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 12);
     active = 0;
     list.hidden = !results.length;
     list.innerHTML = results.map((r, i) => `<li role="option" aria-selected="${i === 0}">${esc(r.label)}<small>${esc(r.sub)}</small></li>`).join('');
@@ -617,24 +658,26 @@ function setupSearch() {
     state.data = data;
     state.features = topojson.feature(topo, topo.objects.borders).features;
     $('#status').innerHTML = `<span>Coverage <b>${Object.keys(data.countries).length} countries</b> over all the years</span><span>Years <b>${data.firstYear}–present</b></span>` +
-      '<span>Borders <b>CShapes 2.0</b></span><span>Leaders <b>Archigos 4.1, Wikidata</b></span><span>Events <b>Wikidata, Wikipedia</b></span>';
+      '<span>Borders <b>Cliopatria v0.2.1</b></span><span>Leaders <b>Archigos 4.1, Wikidata</b></span><span>Events <b>Wikidata, Wikipedia</b></span>';
     drawMap();
     setupTimeline();
     setupSearch();
     setupTable();
-    const { y, f, c, m } = readHash();
+    const { y, f, c, m, old } = readHash();
     state.selected = c;
     state.year = y;
     setupTabs();
     period.setMovement(m, { silent: true }); // the address's movement first, so its period is placed by that rule
     setPeriod(f, y, { push: false });
-    if (c) zoomToCountry(c, [dateFor(state.year)]);
+    if (old) writeHash(); // an old #c=<number>: the same view, under the state's key
+    if (c) zoomToCountry(c, [state.year]);
     window.addEventListener('hashchange', () => {
       const h = readHash();
       const moved = h.m !== period.movement();
       if (moved) period.setMovement(h.m, { silent: true });
       if (moved || h.y !== state.year || (h.f ?? h.y) !== state.from) setPeriod(h.f, h.y, { push: false });
       if (h.c !== state.selected) select(h.c);
+      else if (h.old) writeHash();
     });
   } catch (err) {
     console.error(err);

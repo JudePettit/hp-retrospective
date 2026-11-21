@@ -282,6 +282,18 @@ test('a panel outside statehood names no one as leading the state, and the year\
   const ov91 = await page.textContent('#panel .overview');
   assert.match(ov91, /^Leonid Kravchuk[^.]* led Ukraine in 1991\./, ov91);
   assert.equal(await page.locator('#panel .outside').count(), 0, 'in charge in 1991, inside its statehood');
+  // Second review, X2: what is said of the state counts no party membership from before its statehood. Kravchuk's
+  // membership of the Communist Party of the Soviet Union ends in 1991 before 24 August, the day of independence.
+  const cpsu = data.countries.Q212.leaders.find(l => l.full === 'Leonid Kravchuk').parties.find(m => /Communist Party of the Soviet Union/.test(m.name));
+  assert.ok(cpsu && cpsu.e < data.countries.Q212.spans[0][0], 'the membership ends before independence');
+  assert.doesNotMatch(ov91, /Communist Party of the Soviet Union/, ov91);
+  assert.doesNotMatch(await page.textContent('#panel'), /Parties in power in 1991[\s\S]*Communist Party of the Soviet Union held|The Communist Party of the Soviet Union held power/);
+  // Second review, X5: in the year's list a statehood event stands first on its day, across states. On 1 January 1993
+  // Czechia and Slovakia become independent states and three leaders take office.
+  await open('#y=1993');
+  const jan1 = await page.$$eval('#panel .events li', els => els.map(e => [e.dataset.type, e.textContent]).filter(([, t]) => /^1 Jan 1993/.test(t)).map(([type]) => type));
+  assert.ok(jan1.filter(t => t === 'statehood').length >= 2 && jan1.some(t => t === 'leader'), JSON.stringify(jan1));
+  assert.ok(jan1.lastIndexOf('statehood') < jan1.findIndex(t => t !== 'statehood'), `statehood first on the day: ${jan1}`);
   // The year's list and its counts: no arrival dated outside its state's statehood.
   await open('#y=1990');
   assert.doesNotMatch(await page.textContent('#panel .events'), /Leonid Kravchuk takes power/);
@@ -398,7 +410,10 @@ test('every state\'s leader list is in order, with no leader lost or doubled, an
     for (const l of L.filter(l => l.archigos)) {
       if (l.source !== 'Wikidata' || !/^Q[1-9]\d*$/.test(l.qid || '')) problems.push(`${c.name}: ${l.full} has Archigos dates but source ${l.source}, item ${l.qid}`);
       if (Math.abs(day(l.start) - day(l.archigos.start)) > 31) problems.push(`${c.name}: ${l.full} starts ${l.start}, Archigos ${l.archigos.start}`);
-      if (!!l.end !== !!l.archigos.end || (l.end && Math.abs(day(l.end) - day(l.archigos.end)) > 31)) problems.push(`${c.name}: ${l.full} ends ${l.end}, Archigos ${l.archigos.end}`);
+      // Second review, X1: Archigos 4.1 ends on 31 December 2015, so no later day is Archigos's. A leader in office on
+      // that day has an empty Archigos end, and whatever end the list holds is after it (or none).
+      if (l.archigos.end && l.archigos.end > '2015-12-31') problems.push(`${c.name}: ${l.full} has ${l.archigos.end} as Archigos's end, after Archigos's last day`);
+      if (!l.archigos.end ? (l.end && l.end <= '2015-12-31') : (!l.end || Math.abs(day(l.end) - day(l.archigos.end)) > 31)) problems.push(`${c.name}: ${l.full} ends ${l.end}, Archigos ${l.archigos.end}`);
     }
     // No gap or overlap over a day between neighbours that was not there with Archigos's dates.
     const was = l => l.archigos || l;
@@ -1131,6 +1146,9 @@ test('leader links name the right person: Kostas Karamanlis, George Papandreou, 
   // Review R2 (21 November 2026): Czechia's first Prime Minister is Václav Klaus, not Austria's Chancellor Josef Klaus.
   assert.deepEqual(at('Q213', '1993-01-01'), ['Václav Klaus', 'Václav_Klaus']);
   assert.ok(!data.countries.Q213.leaders.some(l => /Josef Klaus/.test(l.full)), 'no Josef Klaus in Czechia');
+  // 21 November 2026: Czechoslovakia's first President is Tomáš Masaryk, not Jan Masaryk.
+  assert.deepEqual(at('Q33946', '1918-10-28'), ['Tomáš Masaryk', 'Tomáš_Masaryk']);
+  assert.ok(!data.countries.Q33946.leaders.some(l => /Jan Masaryk/.test(l.full)), 'no Jan Masaryk as Czechoslovakia’s leader');
   const all = JSON.stringify(data);
   for (const wrong of ['Peter_Spuhler', 'Theodoros_Grivas', 'Georgios_Papandreou']) assert.ok(!all.includes(wrong), wrong);
 });

@@ -6,7 +6,9 @@
  * For each Archigos leader with an English Wikipedia article, this takes the person's Wikidata item, English label,
  * and the dates of the person's "position held" (P39) in an office Wikidata names as that state's head of state or
  * head of government. If both ends agree with Archigos's within 31 days, the leader takes Wikidata's name and dates
- * (source "Wikidata", with the item; Archigos's own dates are kept beside them in `archigos`). Otherwise the leader
+ * (source "Wikidata", with the item; Archigos's own dates are kept beside them in `archigos`, its end empty where
+ * Archigos's record was still open on its last day, 31 December 2015: there only the start is Archigos's to compare,
+ * and the end is checked against the one build-data.mjs took from Wikidata's office holders). Otherwise the leader
  * keeps Archigos's, and is a gap: the reason is printed, and written to the report with --report.
  *
  * Usage: node scripts/wikidata-leaders.mjs [--report <folder>]   (or LEADERS_REPORT=<folder>, for npm run build-data;
@@ -63,6 +65,9 @@ import { byDay } from './retro-shape.mjs';
 const UA = 'JDP-I H&P Retrospective data build (https://jdpi.pages.dev)';
 const WINDOW = 31;
 const FIRST = '1926-01-01';
+// Archigos 4.1's last day. A leader in office on it has no end in Archigos: the end the list holds by now is the one
+// build-data.mjs (extendLeaders) took from Wikidata's office holders, so it is not kept as Archigos's (second review, X1).
+const ARCHIGOS_LAST = '2015-12-31';
 const GAP_MS = 2000;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const day = d => Date.parse(`${d}T00:00:00Z`) / 864e5;
@@ -312,7 +317,7 @@ export function apply(countries, taken) {
     Object.assign(l, {
       full: t.label, start: t.now.start, end: t.now.end, startPrecision: 'day', endPrecision: t.now.end ? 'day' : null,
       position: t.officeLabel, positionItem: t.office, ...(t.positions ? { positions: t.positions } : {}), qid: t.item, source: 'Wikidata',
-      archigos: { start: t.old.start, end: t.old.end, full: t.old.full ?? null }
+      archigos: { start: t.old.start, end: t.old.end && t.old.end > ARCHIGOS_LAST ? null : t.old.end, full: t.old.full ?? null }
     });
   }
   // One spelling for each person in a list (review D1, fixer): a later term of a person taken here, which the build

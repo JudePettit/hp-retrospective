@@ -126,10 +126,16 @@ const term = p => `${fmt(p.start, p.startPrecision)} – ${fmt(p.end, p.endPreci
 // records only the year of an election, and Cliopatria's borders are by the year.
 const whenOf = e => (e.precision === 'year' || (/^(election|referendum)$/.test(e.type) && e.date.endsWith('-01-01')) ? e.date.slice(0, 4)
   : e.precision === 'month' ? new Date(`${e.date.slice(0, 7)}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' }) : fmt(e.date));
-// Party memberships (from Wikidata) that applied during the years shown; undated memberships always apply.
-function partiesAt(p, a, b = a) {
+// Party memberships (from Wikidata) that applied during the years shown; undated memberships always apply. With a
+// state's key, only those that applied on a day of its statehood in those years: what is said of the state (its
+// overview, "Parties in power") counts nothing from before it was a state. Kravchuk's membership of the Communist
+// Party of the Soviet Union ends in 1991 before Ukraine's independence on 24 August, so that party is not said to
+// have held power in Ukraine in 1991 (second review, X2).
+function partiesAt(p, a, b = a, key = null) {
   const all = p.parties || [];
-  const now = all.filter(m => (!m.s || m.s <= `${b}-12-31`) && (!m.e || m.e >= `${a}-01-01`));
+  const lo = `${a}-01-01`, hi = `${b}-12-31`;
+  const wins = key ? (country(key)?.spans || []).map(([s, e]) => [s > lo ? s : lo, e && e < hi ? e : hi]).filter(([s, e]) => s <= e) : [[lo, hi]];
+  const now = all.filter(m => wins.some(([s, e]) => (!m.s || m.s <= e) && (!m.e || m.e >= s)));
   return (now.length ? now : all.filter(m => !m.s && !m.e)).slice(0, 2);
 }
 const partyChips = (p, a, b = a) => partiesAt(p, a, b).map(m => `<a class="party" href="${esc(m.url)}" target="_blank" rel="noopener">${esc(m.name)}</a>`).join('');
@@ -274,7 +280,10 @@ function renderPanel() {
   if (!state.selected) {
     const all = Object.entries(state.data.countries)
       .flatMap(([key, c]) => eventsIn(key, a, y).map(e => ({ ...e, key, cname: c.name })))
-      .sort((p, q) => p.date.localeCompare(q.date));
+      // On one day a statehood event comes first, as in each state's own list (scripts/retro-shape.mjs byDay): on
+      // 1 January 1993 Czechia's and Slovakia's independence stand before the leaders who took office that day
+      // (second review, X5).
+      .sort((p, q) => p.date.localeCompare(q.date) || (q.type === 'statehood') - (p.type === 'statehood'));
     const count = (...types) => all.filter(e => types.includes(e.type)).length;
     panel.innerHTML = `<h2>${when}</h2>
       <p class="sub">${esc(coverageNote(y))}</p>
@@ -306,7 +315,7 @@ function renderPanel() {
   const page = one && c.yearPages.includes(y) ? `${y} in ${c.yearPage}` : null;
   const pages = one ? [] : c.yearPages.filter(p => p >= a && p <= y).map(p => `${p} in ${c.yearPage}`);
   const ruling = new Map();
-  for (const p of [...leaders, ...offices]) for (const m of partiesAt(p, a, y)) ruling.set(m.url, m);
+  for (const p of [...leaders, ...offices]) for (const m of partiesAt(p, a, y, key)) ruling.set(m.url, m);
   const name = nameOf(key, date);
   // Cliopatria gives one border a year, so a change within a single year cannot be played; over a period, the years
   // in which the border differs from the year before are played one after another.
@@ -316,7 +325,7 @@ function renderPanel() {
     <h2>${esc(name)}</h2>
     <p class="sub">${placed ? when : coveredOn(key, date) ? `${when} · ${esc(cannotPlace([name], y))}, so the map does not draw it` : `Not an independent state at the end of ${y}`}</p>
     <h3>Political overview of ${when}</h3>
-    <p class="overview">${esc(overviewText(name, a, y, leaders, offices, events, [...ruling.values()], { existed, whole: coversAll(key, a, y), outside: outside.leaders }))}</p>
+    <p class="overview">${esc(overviewText(name, a, y, leaders, offices, events, [...ruling.values()], { existed, whole: coversAll(key, a, y), outside: outside.leaders, key }))}</p>
     <div id="wiki-events" class="wiki-events">${page ? '<p class="empty">Loading events from Wikipedia…</p>' : pages.length ? `<p class="note">Wikipedia, year by year: ${pages.map(p => `<a href="${wiki(p)}" target="_blank" rel="noopener">${esc(p.slice(0, 4))}</a>`).join(' · ')}</p>` : ''}</div>
     ${ruling.size ? `<h3>Parties in power ${one ? `in ${y}` : when}</h3><div class="parties">${[...ruling.values()].map(m => `<a class="party" href="${esc(m.url)}" target="_blank" rel="noopener">${esc(m.name)}</a>`).join('')}</div><p class="note" style="margin-top:6px">Party of each leader in office, from Wikidata. Where Wikidata has no membership dates, every party the person belonged to is shown.</p>` : ''}
     ${existed ? `<h3>In charge during ${when}</h3>
@@ -358,7 +367,7 @@ function renderPanel() {
 // `st`: whether the state existed at some time in the years shown, whether throughout them, and the leaders VM's lists
 // hold for it while it was not an independent state (D3, R1): none of them is said to have led it.
 function overviewText(name, a, y, leaders, offices, events, ruling, st = { existed: true, whole: true, outside: [] }) {
-  const who = p => `${p.full || p.name}${partiesAt(p, a, y).length ? ` (${partiesAt(p, a, y).map(m => m.name).join(', ')})` : ''}`;
+  const who = p => `${p.full || p.name}${partiesAt(p, a, y, st.key).length ? ` (${partiesAt(p, a, y, st.key).map(m => m.name).join(', ')})` : ''}`;
   const parts = [], one = a === y;
   // Leaders who ruled together (San Marino's two Captains Regent) are joined with "and"; one who left before the other
   // is marked "until", and one who came while the other was still in office "joined by … from".

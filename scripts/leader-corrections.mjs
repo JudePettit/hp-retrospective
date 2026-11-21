@@ -152,6 +152,11 @@ export const CORRECTIONS = {
   // Chancellor of 1964-70 (fixer, R2, 21 November 2026): he is Václav Klaus (Q57434), whom Q213's head of government
   // (P6) statement, the build's own Wikidata office holders, gives from 1 January 1993 to 2 January 1998.
   Q213: { edit: { '1993-01-01': { full: 'Václav Klaus', url: W('Václav Klaus') } } },
+  // Czechoslovakia's first President, Archigos's "Masaryk" of 28 October 1918 to 14 December 1935, had been linked to
+  // Jan Masaryk, another person (found by the build of 21 November 2026): he is Tomáš Masaryk (Q78492), whom Wikidata
+  // describes as the first Czechoslovak president and whose "position held" (P39) statement runs from 14 November
+  // 1918 to 14 December 1935; his English Wikipedia article is "Tomáš Masaryk". Archigos's own start date is kept.
+  Q33946: { edit: { '1918-10-28': { full: 'Tomáš Masaryk', url: W('Tomáš Masaryk') } } },
   // RT-04: whole lists, each starting with its first entry.
   ...Object.fromEntries(Object.entries(LISTS).map(([key, l]) => [key, { from: l.leaders[0].start, leaders: l.leaders, offices: l.offices }]))
 };

@@ -651,6 +651,20 @@ test('Montenegro and the ten microstates have dated leader lists from their star
   for (const who of ['Maurice Bishop', 'Bernard Coard', 'Hudson Austin']) assert.equal(grenada[who].entry, 'Irregular', who);
 });
 
+// The build drops votes that are not national. Twenty-eight had slipped through its lists (21 November 2026):
+// by-elections named in the plural, the Welsh Assembly's and Greater London's votes, the votes of Bosnia's two
+// entities and one French region's referendum.
+test('no by-election and no vote of a part of a state stands among a state\'s events', () => {
+  const data = JSON.parse(readFileSync(new URL('../data/countries.json', import.meta.url), 'utf8'));
+  const found = Object.values(data.countries).flatMap(c => c.events.filter(e => (e.type === 'election' || e.type === 'referendum')
+    && /\bby-elections?\b|National Assembly for Wales|Greater London|Republika Srpska|Federation of Bosnia and Herzegovina|territorial collectivity/i.test(e.text)).map(e => `${c.name}: ${e.text}`));
+  assert.deepEqual(found, []);
+  // National votes whose titles hold a near word stay: a recall of the President, a border referendum.
+  const texts = key => data.countries[key].events.map(e => e.text);
+  assert.ok(texts('Q96').includes('2022 Mexican presidential recall referendum'));
+  assert.ok(texts('Q242').includes('2019 Belizean territorial dispute referendum'));
+});
+
 // "Also in office" in a fixed order (21 November 2026). Wikidata returns its rows in no set order, and the build kept
 // it: Bosnia's three Presidency members, sworn in on one day, changed places from build to build, and where Wikidata
 // gives one term two ends the build kept whichever came first (Mark Rutte's term ended on 2 July 2024 in one build and

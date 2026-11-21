@@ -249,6 +249,9 @@ async function elections() {
     if (/\b(municipal|local|regional|state|provincial|county|city|mayoral|primary|primaries|by-election|caucus|council|European Parliament|Senate election in|gubernatorial|cantonal|Landtag|Northern Ireland|Scottish|Welsh|Senedd|Police and Crime|London Assembly|Assembly of|leadership)\b/i.test(label)) continue;
     // Overseas territories, dependencies and "election in <place>" sub-contests.
     if (/\b(election|referendum) in\b|Montserrat|Wallis|Futuna|Gibraltar|Bermud|Cayman|Falkland|Jersey|Guernsey|Isle of Man|Manx|Polynesia|Caledonia|Faroe|Greenland|Puerto Ric|Guam|Virgin Islands|Saint Pierre|Mayotte|R[ée]union|Aruba|Cura[cç]ao|Sint Maarten|[ÅA]land|Azores|Madeira|Canary|Northern Mariana|American Samoa|Turks and Caicos|Anguilla|Saint Helena|Martinique|Guadeloupe|French Guiana|Saint Barth|Saint Martin|Bonaire|Svalbard|Hong Kong|Macau|Tibet|Xinjiang|Crimea|Abkhaz|South Osseti|Transnistria|Nagorno|Artsakh|Northern Cyprus|Kurdist|Catalan|Basque|Galician|Andalusian|Bavarian|Saxon|Corsica|Sardinia|Sicil|South Tyrol|Aosta|Friuli|Trentino|Flemish|Walloon|Brussels|Quebec|Ontario|Alberta|British Columbia|Manitoba|Saskatchewan|Nova Scotia|New Brunswick|Newfoundland|Prince Edward|Yukon|Nunavut|Northwest Territories/i.test(label)) continue;
+    // More of the same that the two lists above let through (found 21 November 2026): by-elections in the plural, the
+    // Welsh Assembly's and Greater London's votes, the votes of Bosnia's two entities, and one French region's.
+    if (/\bby-elections\b|\bNational Assembly for Wales\b|\bGreater London\b|\bRepublika Srpska\b|\bFederation of Bosnia and Herzegovina\b|\bterritorial collectivity\b/i.test(label)) continue;
     const qid = val(b, 'country').split('/').pop();
     // US state contests (ballot measures, state legislatures) carry the US as country too.
     if (qid === 'Q30' && !/United States|presidential/i.test(label)) continue;

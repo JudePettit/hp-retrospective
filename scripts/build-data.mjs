@@ -143,11 +143,20 @@ async function wikidataOffices() {
   // De-duplicate the same person/office/start reported through several entities; and where the same person holds the
   // same office from a date given to the day, a statement of theirs that starts in that year but is given only to the
   // year is the same term less precisely dated, and is dropped (D7: Dick Schoof, 2024 on Q29999 and 2 July 2024 on Q55).
+  // Wikidata returns its rows in no set order, so the list is put in a fixed one first: by start, the head of state
+  // before the head of government, then by name and item. Without it, people who took office on one day (Bosnia's
+  // three Presidency members) changed places from build to build. Where one term is reported twice with different
+  // ends, the filter below keeps the first, so the order also settles which: a closed term before an open one, an end
+  // given to the day before one given only to the year, then the later end. On 21 November 2026 Wikidata gave three such
+  // terms two ends each: Mark Rutte's (2 July 2024 and "2024"), Cemal Gürsel's (2 February and 28 March 1966) and
+  // Turgut Özal's (16 and 17 April 1993). The build keeps 2 July 2024, 28 March 1966 and 17 April 1993.
+  const plain = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+  const fixed = (a, b) => plain(a.start, b.start) || plain(b.office, a.office) || plain(a.full || '', b.full || '') || plain(a.qid, b.qid)
+    || plain(a.end ? 0 : 1, b.end ? 0 : 1) || plain(a.endPrecision ? 1 : 0, b.endPrecision ? 1 : 0) || plain(b.end || '', a.end || '') || plain(a.url || '', b.url || '');
   for (const key of Object.keys(out)) {
     const seen = new Set();
-    const list = out[key].filter(x => { const k = `${x.office}|${x.qid}|${x.start}`; if (seen.has(k)) return false; seen.add(k); return true; });
-    out[key] = list.filter(x => !(x.startPrecision && list.some(y => y !== x && y.office === x.office && y.qid === x.qid && !y.startPrecision && y.start.slice(0, 4) === x.start.slice(0, 4))))
-      .sort((a, b) => a.start.localeCompare(b.start));
+    const list = out[key].sort(fixed).filter(x => { const k = `${x.office}|${x.qid}|${x.start}`; if (seen.has(k)) return false; seen.add(k); return true; });
+    out[key] = list.filter(x => !(x.startPrecision && list.some(y => y !== x && y.office === x.office && y.qid === x.qid && !y.startPrecision && y.start.slice(0, 4) === x.start.slice(0, 4))));
   }
   return out;
 }

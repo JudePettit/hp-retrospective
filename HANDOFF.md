@@ -1,3 +1,8 @@
+> A NOTE OF ITS DAY, KEPT FOR THE RECORD (marked 21 November 2026). This file is the hand-over written on 25 October 2026,
+> before the module was first deployed. Much of it no longer holds: states are keyed by Wikidata item and not by
+> Gleditsch and Ward number, the borders are Cliopatria's and not CShapes', statehood dates come from Wikidata, and 692
+> leaders take Wikidata's names and dates. The account that is kept true is `README.md`.
+
 # H&P Retrospective — handoff (25 Oct 2026, 19:40 UTC)
 
 ## Goal (from the user)

@@ -651,6 +651,23 @@ test('Montenegro and the ten microstates have dated leader lists from their star
   for (const who of ['Maurice Bishop', 'Bernard Coard', 'Hudson Austin']) assert.equal(grenada[who].entry, 'Irregular', who);
 });
 
+// "Also in office" in a fixed order (21 November 2026). Wikidata returns its rows in no set order, and the build kept
+// it: Bosnia's three Presidency members, sworn in on one day, changed places from build to build, and where Wikidata
+// gives one term two ends the build kept whichever came first (Mark Rutte's term ended on 2 July 2024 in one build and
+// in "2024" in the next). The order is now by start, head of state first, then by name; of two ends the build keeps the
+// one given to the day, then the later.
+test('people who took office on one day are listed in a fixed order, and one term keeps one end', () => {
+  const data = JSON.parse(readFileSync(new URL('../data/countries.json', import.meta.url), 'utf8'));
+  const sameDay = (key, start) => data.countries[key].offices.filter(o => o.start === start).map(o => `${o.office} ${o.full}`);
+  assert.deepEqual(sameDay('Q225', '2002-10-28'), ['hos Dragan Čović', 'hos Mirko Šarović', 'hos Sulejman Tihić']);
+  assert.deepEqual(sameDay('Q225', '2006-11-06'), ['hos Haris Silajdžić', 'hos Nebojša Radmanović', 'hos Željko Komšić']);
+  assert.deepEqual(sameDay('Q225', '2014-11-17'), ['hos Bakir Izetbegović', 'hos Dragan Čović', 'hos Mladen Ivanić']);
+  const term = (key, full, start) => data.countries[key].offices.filter(o => o.full === full && o.start === start);
+  assert.deepEqual(term('Q55', 'Mark Rutte', '2010-10-14').map(o => [o.end, o.endPrecision]), [['2024-07-02', undefined]]);
+  assert.deepEqual(term('Q43', 'Cemal Gürsel', '1960-05-27').map(o => o.end), ['1966-03-28']);
+  assert.deepEqual(term('Q43', 'Turgut Özal', '1989-11-09').map(o => o.end), ['1993-04-17']);
+});
+
 // RT-04's second readers (16 November 2026) checked the lists against other sources; each correction they found real is
 // held here, with the source it follows.
 test('the RT-04 lists follow the sources the second readers checked', () => {

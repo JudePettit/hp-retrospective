@@ -45,7 +45,14 @@ test('no CShapes in the data or the credits: the borders are Cliopatria\'s rows,
     assert.equal(c.qid, key);
     assert.equal(c.qids[0], key);
     for (const f of ['name', 'iso3', 'yearPage', 'yearPages', 'leaders', 'offices', 'events']) assert.ok(f in c, `${key} keeps ${f}`);
-    assert.ok(!c.events.some(e => e.type === 'statehood'), `${key}: no statehood events (they were CShapes's)`);
+    // Statehood events are Wikidata's since 21 November 2026 (they were CShapes's before 20 November): each names the
+    // item and property it follows, and its date's precision.
+    for (const e of c.events.filter(e => e.type === 'statehood')) {
+      assert.equal(e.src, 'wikidata', JSON.stringify(e));
+      assert.match(e.item, /^Q[1-9]\d*$/, JSON.stringify(e));
+      assert.match(e.property, /^P[1-9]\d*$/, JSON.stringify(e));
+      assert.ok(['day', 'month', 'year'].includes(e.precision), JSON.stringify(e));
+    }
     for (const e of c.events.filter(e => e.type === 'border')) assert.deepEqual([e.precision, e.src, e.date.slice(4)], ['year', 'cliopatria', '-01-01'], JSON.stringify(e));
   }
   assert.equal(Object.keys(data.countries).length, 79);
@@ -65,9 +72,12 @@ test('no CShapes in the data or the credits: the borders are Cliopatria\'s rows,
   assert.match(await page.textContent('#status'), /Cliopatria v0\.2\.1/);
   assert.match(await page.textContent('footer'), /Cliopatria v0\.2\.1[^.]*CC BY 4\.0/);
   assert.ok(await page.locator('footer a[href="https://github.com/Seshat-Global-History-Databank/cliopatria"]').count(), 'Cliopatria is linked');
-  // The leaders to 2015 and how they took and left office stay Archigos's, said plainly, until the owner decides
-  // (MP-11 fixer, 20 November 2026: the line covers the names and dates as well as the coding).
-  assert.match((await page.textContent('footer')).replace(/\s+/g, ' '), /Leaders to 2015 and how they took and left office: Archigos 4\.1 \(Goemans, Gleditsch and Chiozza\), which states no licence; kept until VM’s owner decides\./);
+  // Which leader is counted and how each took and left office stay Archigos's, said plainly, until the owner decides
+  // (MP-11 fixer, 20 November 2026); since 21 November most names and dates are Wikidata's, and the line says which
+  // part each source gives, Archigos's terms as its page states them, and what could not be shown without it.
+  const foot = (await page.textContent('footer')).replace(/\s+/g, ' ');
+  assert.match(foot, /otherwise, and for which leader is counted and how each took and left office \(to 2015\): Archigos 4\.1 \(Goemans, Gleditsch and Chiozza\), whose page states no licence and asks users to “cite this article as their reference for the data” \(Journal of Peace Research, 2009\); kept until VM’s owner decides/);
+  assert.match(foot, /no free source records how leaders took and left office, so without it the irregular seizures of power could not be shown/);
   assert.deepEqual(errors, []);
 });
 
@@ -148,6 +158,290 @@ test('a covered state with no free border for the year is named as one VM cannot
   assert.equal(await page.locator('#animate').count(), 0, 'no animation within one year');
   // Review X3 (21 November 2026): the border differs in Cliopatria, which may be a redrawing; no change is asserted.
   assert.match(await page.textContent('#panel'), /Cliopatria gives borders by the year: the map shows Germany’s border for 1938, which differs in Cliopatria from 1937’s by more than 1% of its area\. That may be a redrawing of Cliopatria’s rows rather than a change of border, and a change within 1938 cannot be shown\./);
+  assert.deepEqual(errors, []);
+});
+
+// Statehood from Wikidata (21 November 2026). Until then a state was covered from its first leader to its last, so
+// Ukraine, whose first Archigos leader took office on 18 July 1990, was "covered" at the end of 1990 and named as a
+// state VM cannot place, though it declared independence on 24 August 1991 (Wikidata, Q212's inception). A state is
+// now covered inside its statehood (data/countries.json statehood, from Wikidata; spans are written from it), and
+// listed as one VM cannot place only while it exists and Cliopatria has no row for it (Ukraine's rows start in 1992).
+test('Ukraine 1990 is not an independent state, and not one VM cannot place; in 1991 it exists and is counted', async () => {
+  const data = json('data/countries.json');
+  const ua = data.countries.Q212;
+  assert.deepEqual(ua.statehood.map(s => [s.start?.date, s.start?.precision, s.start?.item, s.start?.property, s.end]), [['1991-08-24', 'day', 'Q212', 'P571', null]]);
+  assert.deepEqual(ua.spans, [['1991-08-24', null]]);
+  await open('#y=1990');
+  assert.doesNotMatch(await page.textContent('#unplaced'), /Ukraine/);
+  assert.doesNotMatch(await page.textContent('#panel .sub'), /cannot place[^.]*Ukraine/);
+  await open('#y=1990&c=Q212');
+  assert.equal(await page.textContent('#panel .sub'), 'Not an independent state at the end of 1990');
+  await open('#y=1991');
+  assert.match(await page.textContent('#unplaced'), /VM cannot place [^.]*Ukraine[^.]* on a free border for 1991/);
+  await open('#y=1991&c=Q212');
+  assert.match(await page.textContent('#panel .sub'), /VM cannot place Ukraine on a free border for 1991/);
+  // Its statehood event, to the day, among its events.
+  assert.match(await page.textContent('#panel .events li[data-type="statehood"]'), /^24 Aug 1991statehood\s*Ukraine becomes an independent state/);
+  assert.deepEqual(errors, []);
+});
+
+// Steps 2 and 3 of the statehood work (21 November 2026): every state VM cannot place in a year exists then by its
+// statehood, and every state's spans are its statehood's spells (one span for each, from the spell's first day, or
+// 1926 for a state that existed throughout it, to its last day or the present).
+test('no state is named as one VM cannot place outside its statehood, in any year, and the spans are the statehood', async () => {
+  const data = json('data/countries.json');
+  const { displayName } = await import('../names.mjs');
+  for (const [key, c] of Object.entries(data.countries)) {
+    assert.ok(Array.isArray(c.statehood) && c.statehood.length, `${key}: a statehood`);
+    assert.deepEqual(c.spans, c.statehood.map(s => [s.start ? s.start.date : `${data.firstYear}-01-01`, s.end ? s.end.date : null]), `${key}: spans from the statehood`);
+    for (const s of c.statehood) for (const p of [s.start, s.end].filter(Boolean)) {
+      assert.match(p.date, /^\d{4}-\d\d-\d\d$/, `${key} ${JSON.stringify(p)}`);
+      assert.ok(['day', 'month', 'year'].includes(p.precision) && /^Q[1-9]\d*$/.test(p.item) && /^P[1-9]\d*$/.test(p.property), `${key} ${JSON.stringify(p)}`);
+    }
+  }
+  const exists = (c, date) => c.statehood.some(s => (!s.start || s.start.date <= date) && (!s.end || date <= s.end.date));
+  await open(`#y=${data.firstYear}`);
+  const problems = [];
+  for (let y = data.firstYear; y <= data.lastYear; y++) {
+    await page.evaluate(h => { location.hash = h; }, `#y=${y}`);
+    await page.waitForFunction(y => document.querySelector('#year-big')?.textContent === String(y), y, { timeout: 5000 });
+    const text = (await page.textContent('#unplaced')).trim();
+    if (!text) continue;
+    const date = y >= new Date().getUTCFullYear() ? new Date().toISOString().slice(0, 10) : `${y}-12-31`;
+    for (const [key, c] of Object.entries(data.countries)) {
+      // A whole name in the list ("VM cannot place A, B and C on a free border for y"), so that "Germany" is not
+      // found inside "West Germany".
+      const name = displayName(key, c.name, date).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (!new RegExp(`(?:place |, | and )${name}(?:,| and | on a free)`).test(text)) continue;
+      if (!exists(c, date)) problems.push(`${y}: ${c.name} is named as one VM cannot place, outside its statehood`);
+    }
+  }
+  assert.deepEqual(problems, []);
+  assert.deepEqual(errors, []);
+});
+
+// Step 3: statehood events are back on the page (as before 20 November, ec2a173), from Wikidata, apart from the border
+// events: Germany's unification on 3 October 1990 to the day, in the legend's own colour; a date Wikidata gives only
+// to the year is shown as the year (Grenada's independence, 1974).
+test('a statehood event is shown to its day in the events and has its own place in the legend: Germany, 3 October 1990', async () => {
+  const data = json('data/countries.json');
+  const de = data.countries.Q713750.events.filter(e => e.type === 'statehood');
+  assert.ok(de.some(e => e.date === '1990-10-03' && e.precision === 'day' && e.src === 'wikidata'), JSON.stringify(de));
+  const gd = data.countries.Q16957.events.filter(e => e.type === 'statehood');
+  assert.ok(gd.some(e => e.date === '1990-10-03' && e.precision === 'day'), JSON.stringify(gd));
+  await open('#y=1990&c=Q713750');
+  const item = page.locator('#panel .events li[data-type="statehood"]');
+  assert.equal(await item.count(), 1);
+  assert.match(await item.textContent(), /^3 Oct 1990statehood/);
+  const legend = await page.textContent('.legend');
+  assert.match(legend, /Independence, union or end of a state/);
+  assert.match(legend, /Cliopatria’s border differs/);
+  assert.equal(await page.locator('.legend .swatch[style*="--c-statehood"]').count(), 1);
+  const fill = await page.locator('path.shape[data-key="Q713750"]').first().getAttribute('fill');
+  assert.equal(fill, 'var(--c-statehood)', 'West Germany / Germany in 1990 takes the statehood colour');
+  await open('#y=1974&c=Q769');
+  assert.match(await page.textContent('#panel .events li[data-type="statehood"]'), /^1974statehood\s*Grenada becomes an independent state/);
+  // The year's counts keep the border and statehood events apart.
+  await open('#y=1990');
+  assert.match(await page.textContent('#panel .prp-kpis'), /Independence, union or end\s*\d+/);
+  assert.deepEqual(errors, []);
+});
+
+// Where a state exists but VM holds no leader for the date (the Netherlands at the end of 1942, its government in exile
+// not in Archigos), the panel says so in one plain line.
+test('a state that exists with no leader held for the date says VM holds no leader for it', async () => {
+  await open('#y=1942&c=Q55');
+  assert.match(await page.textContent('#panel'), /VM holds no leader for 31 Dec 1942\./);
+  // Once (review R6, 21 November 2026): not also "No leader recorded for this year".
+  assert.doesNotMatch(await page.textContent('#panel'), /No leader recorded/);
+  // R6 also: Wikidata's two statements of Wilhelmina's reign make one entry, in the overview and in the list.
+  assert.equal((await page.textContent('.overview')).split('Wilhelmina of the Netherlands').length - 1, 1);
+  assert.doesNotMatch(await page.textContent('#panel .sub'), /Not an independent state/);
+  await open('#y=1990&c=Q212');
+  assert.doesNotMatch(await page.textContent('#panel'), /VM holds no leader/, 'a year outside its statehood says that instead');
+  assert.deepEqual(errors, []);
+});
+
+// Review of 21 November 2026 (D3, R1): a leader list can start before the state's statehood (Archigos starts Ukraine's
+// Kravchuk on 18 July 1990, before its independence on 24 August 1991). Outside its statehood the panel no longer says
+// anyone "led" the state: such leaders and events are listed apart, under "While not an independent state", and the
+// year's counts and its list of key events leave them out. Grenada's 1967 election, before its independence in 1974,
+// is no longer listed (election-corrections.mjs keeps an election inside its state's statehood, as the build does).
+test('a panel outside statehood names no one as leading the state, and the year\'s counts leave such arrivals out', async () => {
+  const data = json('data/countries.json');
+  await open('#y=1990&c=Q212');
+  assert.equal(await page.textContent('#panel .sub'), 'Not an independent state at the end of 1990');
+  const overview = await page.textContent('#panel .overview');
+  assert.doesNotMatch(overview, /led Ukraine/, overview);
+  assert.match(overview, /^Ukraine was not an independent state in 1990; VM’s list names Leonid Kravchuk[^.]* for that time\./, overview);
+  assert.match(await page.textContent('#panel .outside'), /While not an independent state[\s\S]*Leonid Kravchuk[\s\S]*Leonid Kravchuk takes power/);
+  assert.equal(await page.locator('#panel .events:not(.outside .events) li[data-type="leader"]').count(), 0, 'no arrival among the key events');
+  await open('#y=1950&c=Q40');
+  assert.doesNotMatch(await page.textContent('#panel .overview'), /led Austria/);
+  await open('#y=1991&c=Q212');
+  const ov91 = await page.textContent('#panel .overview');
+  assert.match(ov91, /^Leonid Kravchuk[^.]* led Ukraine in 1991\./, ov91);
+  assert.equal(await page.locator('#panel .outside').count(), 0, 'in charge in 1991, inside its statehood');
+  // The year's list and its counts: no arrival dated outside its state's statehood.
+  await open('#y=1990');
+  assert.doesNotMatch(await page.textContent('#panel .events'), /Leonid Kravchuk takes power/);
+  const inside = (c, d) => c.spans.some(([s, e]) => s <= d && (!e || d <= e));
+  const changes = Object.values(data.countries).flatMap(c => c.events.filter(e => /^(leader|coup)$/.test(e.type) && e.date.startsWith('1990') && inside(c, e.date))).length;
+  assert.match(await page.textContent('#panel .prp-kpis'), new RegExp(`Leader changes\\s*${changes}\\b`));
+  assert.deepEqual(errors, []);
+});
+
+// Review D1 and R3 (21 November 2026): Wikidata's English label is checked against the title of the English Wikipedia
+// article the leader links to, and where they differ the title is shown: "Adolph Bowler" (Q336034), "Isaac Shamir"
+// (Q184351) and "Lázaro Cárdenas segundo" (Q296718) were Wikidata's labels. A person keeps one spelling in a list.
+test('leader names are their articles\' names, not doubtful labels, with one spelling for each person in a list', async () => {
+  const data = json('data/countries.json');
+  // The leaders' names and the events' texts; archigos.full keeps the name held before the match, as the README says,
+  // and the office holders under "Also in office" keep Wikidata's labels (a leader's own office row is left out, by
+  // name or by article: Israel 1990 below).
+  const all = JSON.stringify(Object.values(data.countries).map(c => [c.leaders, c.events]), (k, v) => (k === 'archigos' ? undefined : v));
+  for (const bad of ['Adolph Bowler', 'Isaac Shamir', 'Cárdenas segundo']) assert.ok(!all.includes(bad), bad);
+  const title = url => decodeURIComponent(url.split('/wiki/')[1]).replace(/_/g, ' ').replace(/ \(.*\)$/, '');
+  const problems = [];
+  for (const c of Object.values(data.countries)) {
+    const byUrl = new Map();
+    for (const l of c.leaders) if (l.url) byUrl.set(l.url, [...(byUrl.get(l.url) || []), l.full]);
+    for (const [url, names] of byUrl) if (new Set(names).size > 1) problems.push(`${c.name}: ${[...new Set(names)].join(' / ')} (${url})`);
+    for (const l of c.leaders.filter(l => l.archigos)) if (l.full !== title(l.url)) problems.push(`${c.name}: ${l.full} is not its article's title, ${title(l.url)}`);
+  }
+  assert.deepEqual(problems, []);
+  assert.ok(data.countries.Q211.events.some(e => e.text === 'Ādolfs Bļodnieks takes power'));
+  await open('#y=1933&c=Q211');
+  assert.match(await page.textContent('#panel'), /Ādolfs Bļodnieks/);
+  await open('#y=1990&c=Q801');
+  const israel = await page.textContent('#panel');
+  assert.match(israel, /Yitzhak Shamir/);
+  assert.ok(!/Isaac Shamir/.test(israel), 'Shamir is not listed again under his Wikidata label');
+  assert.deepEqual(errors, []);
+});
+
+// Review D2 (21 November 2026): an office's label is stored only where it reads as an office (President of Cyprus,
+// Q841760, had the English label "Padre y esposo Coughlan"). Review D5: a term joined across two offices names each
+// (positions) and is labelled by the office held at its end; another office's term is joined only where that brings
+// the dates nearer Archigos's (Ulmanis's premiership alone ends on 20 June 1940, 2 days from Archigos's 22 June).
+test('the offices stored with the Wikidata leaders read as offices, and a term across two offices names both', () => {
+  const data = json('data/countries.json');
+  assert.ok(!JSON.stringify(data).includes('Coughlan'));
+  const office = /\b(president|prime minister|premier|chancellor|taoiseach|king|queen|monarch|emperor|chairman|chairperson|chair|head of|leader|minister|regent|prince|princess|captain|governor|secretary|sultan|emir|shah|ruler|syndic)\b/i;
+  for (const c of Object.values(data.countries)) for (const l of c.leaders) {
+    for (const p of [l.position, ...(l.positions || []).map(x => x.label)]) if (p != null) assert.ok(office.test(p) || c.name.split(' / ').some(n => p.includes(n)), `${c.name}: ${l.full}: ${p}`);
+  }
+  const ilham = data.countries.Q227.leaders.find(l => l.full === 'Ilham Aliyev');
+  assert.equal(ilham.position, 'President of Azerbaijan');
+  assert.deepEqual(ilham.positions.map(p => p.label), ['Prime Minister of Azerbaijan', 'President of Azerbaijan']);
+  const ulmanis = data.countries.Q211.leaders.find(l => l.archigos?.start === '1934-03-16');
+  assert.deepEqual([ulmanis.end, ulmanis.position, ulmanis.positions], ['1940-06-20', 'Prime Minister of Latvia', undefined]);
+});
+
+// Review D7 (21 November 2026): Wikidata's office holders after 2015 keep each date's precision; a statement known only
+// to the year is not a second term beside the same person's dated one (Dick Schoof was listed twice, from "1 Jan 2024"
+// and from 2 July 2024), and a date given to the year is shown as the year, never as 1 January.
+test('office holders\' dates keep their precision, and no person is listed twice for one term', async () => {
+  const data = json('data/countries.json');
+  const problems = [];
+  for (const c of Object.values(data.countries)) {
+    const seen = new Set();
+    for (const l of c.leaders) { const k = `${l.url}|${l.end}`; if (l.url && seen.has(k)) problems.push(`${c.name}: ${l.full} twice, to ${l.end}`); seen.add(k); }
+    for (const p of [...c.leaders, ...c.offices]) for (const [d, pr] of [[p.start, p.startPrecision], [p.end, p.endPrecision]]) {
+      if (pr && !['day', 'month', 'year'].includes(pr)) problems.push(`${c.name}: ${p.full}: precision ${pr}`);
+      if (pr === 'year' && !d.endsWith('-01-01')) problems.push(`${c.name}: ${p.full}: ${d} to the year`);
+    }
+  }
+  assert.deepEqual(problems, []);
+  assert.equal(data.countries.Q55.leaders.filter(l => l.full === 'Dick Schoof').length, 1);
+  assert.equal(data.countries.Q55.leaders.find(l => l.full === 'Mark Rutte' && l.start === '2010-10-14').end, '2024-07-02');
+  // Every leader or office holder dated only to the year is shown as the year in its panel.
+  const yearOnly = Object.entries(data.countries).flatMap(([key, c]) => c.leaders.filter(l => l.startPrecision === 'year' && l.start >= '2016-01-01').map(l => [key, l]));
+  for (const [key, l] of yearOnly.slice(0, 3)) {
+    await open(`#y=${l.start.slice(0, 4)}&c=${key}`);
+    const metas = await page.$$eval('#panel .leader .meta', els => els.map(e => e.textContent));
+    assert.ok(metas.some(m => m.startsWith(`${l.start.slice(0, 4)} – `)), `${l.full}: ${metas.join(' | ')}`);
+    assert.ok(!metas.some(m => m.startsWith(`1 Jan ${l.start.slice(0, 4)}`)), `${l.full}: ${metas.join(' | ')}`);
+  }
+  assert.deepEqual(errors, []);
+});
+
+// Review R8 (21 November 2026): the overview gives a statehood event's cause and date in one bracket, and the year's
+// list names a state that ends by the name it had until that day (the Soviet Union, not Russia, is dissolved).
+test('the overview gives a statehood event\'s cause and date in one bracket, and an ending state keeps its name', async () => {
+  await open('#y=1990&c=Q16957');
+  const ov = await page.textContent('#panel .overview');
+  assert.doesNotMatch(ov, /\) \(/, ov);
+  assert.match(ov, /East Germany ceases to be an independent state \(German reunification, 3 Oct 1990\)\./, ov);
+  await open('#y=1991');
+  const items = await page.$$eval('#panel .events li[data-type="statehood"]', els => els.map(e => e.textContent));
+  assert.ok(items.some(t => /Soviet Union: The Soviet Union is dissolved/.test(t)), items.join(' | '));
+  assert.ok(!items.some(t => /Russia: The Soviet Union is dissolved/.test(t)), items.join(' | '));
+  assert.deepEqual(errors, []);
+});
+
+// Step 4 (21 November 2026): every state's leader list stays in order by start, with no leader doubled; each arrival
+// event has its leader and each leader from 1926 its arrival event, on the same day; a leader whose name and dates now
+// come from Wikidata carries the item and Archigos's own dates, within 31 days of Wikidata's at each end.
+test('every state\'s leader list is in order, with no leader lost or doubled, and the Wikidata leaders are within 31 days of Archigos', () => {
+  const data = json('data/countries.json');
+  const day = d => Date.parse(`${d}T00:00:00Z`) / 864e5;
+  const problems = [];
+  for (const [key, c] of Object.entries(data.countries)) {
+    const L = c.leaders;
+    L.forEach((l, i) => { if (i && l.start < L[i - 1].start) problems.push(`${c.name}: ${l.full || l.name} (${l.start}) after ${L[i - 1].full || L[i - 1].name} (${L[i - 1].start})`); });
+    const seen = new Set();
+    for (const l of L) { const k = `${l.full || l.name}|${l.start}|${l.end}`; if (seen.has(k)) problems.push(`${c.name}: ${k} twice`); seen.add(k); }
+    const arrivals = c.events.filter(e => e.type === 'leader' || e.type === 'coup');
+    for (const l of L.filter(l => l.start >= `${data.firstYear}-01-01`)) if (!arrivals.some(e => e.date === l.start)) problems.push(`${c.name}: no arrival event for ${l.full || l.name} on ${l.start}`);
+    for (const e of arrivals) if (!L.some(l => l.start === e.date)) problems.push(`${c.name}: "${e.text}" on ${e.date} has no leader`);
+    for (const l of L.filter(l => l.archigos)) {
+      if (l.source !== 'Wikidata' || !/^Q[1-9]\d*$/.test(l.qid || '')) problems.push(`${c.name}: ${l.full} has Archigos dates but source ${l.source}, item ${l.qid}`);
+      if (Math.abs(day(l.start) - day(l.archigos.start)) > 31) problems.push(`${c.name}: ${l.full} starts ${l.start}, Archigos ${l.archigos.start}`);
+      if (!!l.end !== !!l.archigos.end || (l.end && Math.abs(day(l.end) - day(l.archigos.end)) > 31)) problems.push(`${c.name}: ${l.full} ends ${l.end}, Archigos ${l.archigos.end}`);
+    }
+    // No gap or overlap over a day between neighbours that was not there with Archigos's dates.
+    const was = l => l.archigos || l;
+    L.forEach((b, i) => {
+      const a = L[i - 1];
+      if (!a || !a.end || !(a.archigos || b.archigos)) return;
+      const g1 = day(b.start) - day(a.end), g0 = was(a).end ? day(was(b).start) - day(was(a).end) : g1;
+      // A break already over the 31 days a match may move a date (Latvia's from 1940 to 1990) may change by a few days.
+      if (Math.abs(g1) > 1 && Math.abs(g1) > Math.abs(g0) && !(g0 > 31 && g1 > 31)) problems.push(`${c.name}: ${Math.abs(g1)} days ${g1 > 0 ? 'apart' : 'overlapping'} between ${a.full} and ${b.full}, ${Math.abs(g0)} with Archigos's dates`);
+      // Review R4: no leader takes power before the one before leaves where Archigos's dates do not overlap (Egon
+      // Krenz had taken Wikidata's 17 October 1989, the day before Honecker left).
+      if (g1 < 0 && g0 >= 0) problems.push(`${c.name}: ${b.full} takes power on ${b.start}, before ${a.full} leaves on ${a.end}`);
+    });
+  }
+  assert.deepEqual(problems, []);
+  assert.ok(Object.values(data.countries).flatMap(c => c.leaders).filter(l => l.archigos).length > 500, 'most Archigos leaders now take Wikidata\'s names and dates');
+});
+
+// Step 5: the Sources line, the data's sources and the README say where statehood and the leaders come from.
+test('the Sources line names Wikidata for statehood and for the leaders', async () => {
+  const data = json('data/countries.json');
+  assert.match(data.sources.statehood || '', /^Wikidata \(CC0\)/);
+  assert.match(data.sources.leaders || '', /Wikidata \(CC0\)/);
+  await open('');
+  const foot = (await page.textContent('footer')).replace(/\s+/g, ' ');
+  assert.match(foot, /Statehood \(when each state began, ended or was unified\): Wikidata \(CC0\)/);
+  assert.match(foot, /Leaders’ names and dates: Wikidata \(CC0\)/);
+  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+  assert.match(readme, /statehood[^\n]*Wikidata/i);
+  // Review R7: for how many leaders, counted from the data the page reads.
+  const leaders = Object.values(data.countries).flatMap(c => c.leaders);
+  const moved = leaders.filter(l => l.archigos).length, chosen = moved + leaders.filter(l => l.source === 'Archigos').length;
+  const n = x => x.toLocaleString('en-GB');
+  assert.ok(foot.includes(`for ${n(moved)} of the ${n(chosen)} leaders Archigos counts`), foot);
+  assert.ok(readme.includes(`${n(moved)} of the ${n(chosen)} leaders Archigos counts`), 'the README gives the same count');
+  // Review R5: the Limits line names the states the page says it cannot place, as the README does, not the list of
+  // before 21 November (which gave Poland from 1944 to 1952 and left out the wartime occupations).
+  assert.doesNotMatch(foot, /Poland from 1944 to 1952/);
+  assert.match(foot, /the Netherlands, Belgium, Luxembourg and Monaco 1940–44/);
+  assert.match(foot, /Poland 1940–52/);
+  // Reviews D4 and D6: the choices behind Austria's 1945–55 and the Baltic and Georgian dates are said where they apply.
+  assert.match(foot, /Austria from 1945 to 1955 is counted as not an independent state, as Germany is from 1945 to 1949, and unlike Japan from 1945 to 1952/);
+  assert.match(foot, /The Baltic and Georgian dates are Wikidata’s own items’ dates, and differ in kind/);
   assert.deepEqual(errors, []);
 });
 
@@ -405,7 +699,9 @@ test('the election dates of Saint Vincent 2025 and Grenada 1967 and 2026 follow 
   const vote = (key, title) => data.countries[key].events.filter(e => e.type === 'election' && e.text === title).map(e => e.date);
   assert.deepEqual(vote('Q757', '2025 Vincentian general election'), ['2025-11-27']);
   assert.deepEqual(vote('Q769', '2026 Grenadian general election'), ['2026-11-05']);
-  assert.deepEqual(vote('Q769', '1967 Grenadian general election'), ['1967-08-24']);
+  // Since 21 November 2026 (review D3) an election is listed only inside its state's statehood: Grenada's of 1967, held
+  // seven years before its independence (Wikidata: 1974), is taken from Spain and not listed.
+  assert.deepEqual(vote('Q769', '1967 Grenadian general election'), []);
   assert.deepEqual(vote('Q769', '2003 Grenadian general election'), ['2003-11-27']);
   assert.deepEqual(data.countries.Q29.events.filter(e => /Grenad/.test(e.text)), [], 'no Grenadian election under Spain');
   const shown = async hash => {
@@ -414,7 +710,7 @@ test('the election dates of Saint Vincent 2025 and Grenada 1967 and 2026 follow 
   };
   assert.ok((await shown('#y=2025&c=Q757')).includes('27 Nov 2025 2025 Vincentian general election'));
   assert.ok((await shown('#y=2026&c=Q769')).includes('5 Nov 2026 2026 Grenadian general election'));
-  assert.ok((await shown('#y=1967&c=Q769')).includes('24 Aug 1967 1967 Grenadian general election'));
+  assert.ok(!(await shown('#y=1967&c=Q769')).some(t => /Grenadian/.test(t)));
   assert.deepEqual((await shown('#y=1967&c=Q29')).filter(t => /Grenad/.test(t)), []);
   assert.deepEqual(errors, []);
 });
@@ -820,7 +1116,8 @@ test('on a phone (390 px), opened with no year, the handles stand at least 24 px
 // MI-10's sweep (15 Nov 2026): leader links that led to the wrong man of the name, or to a disambiguation page.
 test('leader links name the right person: Kostas Karamanlis, George Papandreou, Ioannis Grivas, Willy Spühler and four more', () => {
   const data = JSON.parse(readFileSync(new URL('../data/countries.json', import.meta.url), 'utf8'));
-  const at = (key, start) => { const l = data.countries[key].leaders.find(x => x.start === start); return [l.full, decodeURIComponent(l.url.split('/wiki/')[1])]; };
+  // A leader is found by Archigos's start, which a leader that now takes Wikidata's dates keeps in `archigos`.
+  const at = (key, start) => { const l = data.countries[key].leaders.find(x => (x.archigos?.start || x.start) === start); return [l.full, decodeURIComponent(l.url.split('/wiki/')[1])]; };
   assert.deepEqual(at('Q41', '2004-03-10'), ['Kostas Karamanlis', 'Kostas_Karamanlis']);
   assert.deepEqual(at('Q41', '2009-10-06'), ['George Papandreou', 'George_Papandreou']);
   assert.deepEqual(at('Q41', '1989-10-11'), ['Ioannis Grivas', 'Ioannis_Grivas']);
@@ -831,6 +1128,9 @@ test('leader links name the right person: Kostas Karamanlis, George Papandreou, 
   assert.equal(at('Q211', '2000-05-05')[1], 'Andris_Bērziņš_(prime_minister)');
   assert.equal(at('Q20', '1926-03-03')[1], 'Ivar_Lykke_(politician)');
   assert.equal(at('Q189', '1963-11-14')[1], 'Bjarni_Benediktsson_(born_1908)');
+  // Review R2 (21 November 2026): Czechia's first Prime Minister is Václav Klaus, not Austria's Chancellor Josef Klaus.
+  assert.deepEqual(at('Q213', '1993-01-01'), ['Václav Klaus', 'Václav_Klaus']);
+  assert.ok(!data.countries.Q213.leaders.some(l => /Josef Klaus/.test(l.full)), 'no Josef Klaus in Czechia');
   const all = JSON.stringify(data);
   for (const wrong of ['Peter_Spuhler', 'Theodoros_Grivas', 'Georgios_Papandreou']) assert.ok(!all.includes(wrong), wrong);
 });

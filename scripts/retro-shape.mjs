@@ -3,36 +3,38 @@
 //
 // - countries is keyed by each state's first Wikidata item (countries.mjs), and each record carries qid and qids.
 // - oldKeys maps the Gleditsch and Ward numbers this site used until then (#c=2) to those keys, for old addresses only.
-// - spans: the stretches of time a state is covered, from its own leader list (VM's rule, below).
-// - border events come from Cliopatria's rows, by the year (precision: 'year'); there are no statehood events.
+// - statehood (since 21 November 2026): the state's spells of statehood from Wikidata, [{ start, end }], each start
+//   and end null (before 1926, or still a state) or { date, precision, item, property, rank } (build-statehood.mjs).
+// - spans: the stretches of time a state is covered, one for each spell of its statehood (spansOf, build-statehood.mjs),
+//   from its first day (or 1 January 1926) to its last (or null). Until 21 November they came from the leader list.
+// - border events come from Cliopatria's rows, by the year (precision: 'year'); statehood events from Wikidata
+//   (type 'statehood', precision 'day', 'month' or 'year', kind, src 'wikidata', item, property).
 // - built is the day the leaders and events were last built (build-data.mjs); bordersBuilt the day the borders were
 //   (build-borders.mjs); bordersTo the last year the borders file holds (2025 and 2026 are drawn on it).
 import { COUNTRIES, OLD_KEYS } from './countries.mjs';
 
 export const FORMAT = 'retro-countries/2';
-// Each source line names the source, its terms and where they are written (read on 20 November 2026).
+// The order of a state's events: by day, and on one day a statehood event, then the leader who takes power, then the
+// vote, then Cliopatria's border (equal ones keep their order). Every script that sorts the events uses it, so that
+// leader-corrections.mjs, run again on its own, leaves the file as the build wrote it (until 21 November 2026 a
+// leader and an election on one day, Dominica's 21 July 1980, could change places).
+const EVENT_RANK = { statehood: 0, leader: 1, coup: 1, election: 2, referendum: 2, border: 3 };
+export const byDay = (a, b) => a.date.localeCompare(b.date) || (EVENT_RANK[a.type] ?? 4) - (EVENT_RANK[b.type] ?? 4);
+// Each source line names the source, its terms and where they are written (read on 20 November 2026; Archigos's page
+// read again on 21 November 2026). The numbered lines keep their numbers and meaning for the main site's readers;
+// statehood and leaders (21 November 2026) say which source gives which part.
 export const SOURCES = {
   0: 'Cliopatria v0.2.1 (Seshat Global History Databank), CC BY 4.0: https://github.com/Seshat-Global-History-Databank/cliopatria/blob/v0.2.1/LICENSE.md',
-  1: 'Archigos 4.1 (Goemans, Gleditsch and Chiozza), which states no licence; kept until VM’s owner decides: https://www.rochester.edu/college/faculty/hgoemans/data.htm',
+  1: 'Archigos 4.1 (Goemans, Gleditsch and Chiozza), whose page states no licence and asks users to “cite this article as their reference for the data” (Journal of Peace Research 46(2), 2009); kept until VM’s owner decides, for which leader is counted and how each took and left office, which no free source records: https://www.rochester.edu/college/faculty/hgoemans/data.htm',
   2: 'Wikidata (CC0)',
-  3: 'Wikipedia'
+  3: 'Wikipedia',
+  statehood: 'Wikidata (CC0): each state’s inception (P571), dissolution (P576) and “instance of sovereign state” (P31, P580) statements, and those of the items it replaced and that replaced it (P1365, P1366); the picks that are not the single preferred value are listed in scripts/build-statehood.mjs',
+  leaders: 'Names and dates: Wikidata (CC0), the person’s “position held” (P39) statement, where its dates agree with Archigos 4.1 within 31 days (source "Wikidata", with the item, named by the title of the English Wikipedia article the item links to, and Archigos’s own dates and earlier name kept in archigos); otherwise Archigos 4.1 (source "Archigos"). Which leader is counted, and entry, exit and exitHow: Archigos 4.1, to 2015. After 2015: Wikidata (CC0). The eleven hand-built lists (source "leader-lists"): scripts/leader-lists.mjs, which names its sources'
 };
 
-const day = d => Date.parse(`${d}T00:00:00Z`) / 864e5;
-const iso = n => new Date(n * 864e5).toISOString().slice(0, 10);
-// VM's rule: a state is covered from its first leader's first day to its last leader's last (or today), and a gap
-// between two leaders of up to two years (GAP_DAYS) is not a break. The longer gaps in these lists are the years a
-// state was occupied or annexed and its leader sources record nobody (the Netherlands 1940–45, the Baltic states
-// 1940–90); the shorter ones are where a list has nobody for a while (China between August 1945 and December 1946,
-// Bulgaria's caretaker months of 2021), and the state was still there.
-export const GAP_DAYS = 730;
-/** The stretches a state is covered: [[start, end or null], …], from its leader list. */
-export function coverSpans(leaders, gap = GAP_DAYS) {
-  const s = (leaders || []).filter(l => l.start).map(l => [day(l.start), l.end ? day(l.end) : Infinity]).sort((a, b) => a[0] - b[0]);
-  const out = [];
-  for (const [a, b] of s) { const l = out.at(-1); if (l && a <= l[1] + gap) l[1] = Math.max(l[1], b); else out.push([a, b]); }
-  return out.map(([a, b]) => [iso(a), b === Infinity ? null : iso(b)]);
-}
+// Until 21 November 2026 a state was covered from its first leader to its last (coverSpans, with gaps of up to two
+// years not a break), so a state was "covered" before it existed (Ukraine from Archigos's first leader, July 1990).
+// Its spans are now its statehood's (build-statehood.mjs), and where it exists but VM holds no leader the page says so.
 const covered = (spans, y) => spans.some(([s, e]) => s <= `${y}-12-31` && (!e || e >= `${y}-01-01`));
 
 // A border change is a year whose rows for the state hold an area that differs from the year before by more than

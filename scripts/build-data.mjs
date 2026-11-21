@@ -4,21 +4,27 @@
  *  - Archigos 4.1 (Goemans, Gleditsch and Chiozza; it states no licence, kept until VM's owner decides): effective
  *    leaders to 2015, and how each took and left office. Its country column (ccode) is a Gleditsch and Ward number,
  *    read through OLD_KEYS (countries.mjs) to the state's Wikidata key.
- *  - Wikidata (CC0): heads of state and government after 2015, national elections and referendums, links to Wikipedia
+ *  - Wikidata (CC0): heads of state and government after 2015, national elections and referendums, links to Wikipedia,
+ *    and each state's statehood (build-statehood.mjs: when it began, ended or was unified, and its statehood events)
  *  - Wikipedia: which "<year> in <country>" pages exist
  *  - data/borders.topo.json, Cliopatria v0.2.1's rows (CC BY 4.0) as scripts/build-borders.mjs writes them: only for
  *    the border events. Run build-borders.mjs first when the borders change.
  *
  * Usage: node scripts/build-data.mjs   (needs raw/Archigos_4.1_stata14.dta and data/borders.topo.json; network)
  * The order of steps; it writes nothing until every step has worked:
- *  1. Archigos's leaders (from 1926), each under its state's key.
- *  2. Wikidata's office holders, and the leader lists continued past 2015 with them.
- *  3. Wikidata's elections (cached in build/elections-cache.json) and Wikipedia's year pages.
+ *  1. Archigos's leaders (from 1926), each under its state's key, each state's list in order of its start (Archigos's
+ *     rows for Serbia, 340, come after Yugoslavia's, 345, in its file, and until 21 November 2026 stayed there).
+ *  2. Wikidata's office holders, each date with its precision (a year-only statement dropped where the same person's
+ *     term in the same office is dated to the day), and the leader lists continued past 2015 with them.
+ *  3. Wikidata's elections (cached in build/elections-cache.json), Wikipedia's year pages, and Wikidata's statehood
+ *     statements (build-statehood.mjs statements() and statehood(), which check every pick in its PICKS table).
  *  4. Leader events, and the hand corrections to the leader lists (leader-corrections.mjs correctCountry).
- *  5. Each state's spans from its corrected leader list (retro-shape.mjs coverSpans), elections kept only inside them;
- *     border events from the borders file's rows (retro-shape.mjs borderEvents); the election corrections
- *     (election-corrections.mjs); then writes data/countries.json.
- * Output: data/countries.json (resolve-leaders.mjs and build-parties.mjs then patch it; npm run build-data runs all three)
+ *  5. Each state's statehood, its spans (one for each spell of its statehood) and its statehood events
+ *     (build-statehood.mjs applyStatehood; until 21 November 2026 the spans came from the leader list), elections kept
+ *     only inside the spans; border events from the borders file's rows (retro-shape.mjs borderEvents); the election
+ *     corrections (election-corrections.mjs); then writes data/countries.json.
+ * Output: data/countries.json (resolve-leaders.mjs, build-parties.mjs and wikidata-leaders.mjs then patch it; npm run
+ * build-data runs all four)
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { readDta } from './read-dta.mjs';
@@ -26,7 +32,8 @@ import { COUNTRIES, OLD_KEYS, YEAR_IN, FIRST_YEAR, LAST_YEAR } from './countries
 import { displayName } from '../names.mjs';
 import { correctCountry } from './leader-corrections.mjs';
 import { correctElections } from './election-corrections.mjs';
-import { coverSpans, borderEvents, document } from './retro-shape.mjs';
+import { borderEvents, document, byDay } from './retro-shape.mjs';
+import { statements, statehood, applyStatehood } from './build-statehood.mjs';
 
 const ROOT = new URL('..', import.meta.url);
 const path = p => new URL(p, ROOT).pathname.replace(/^\/([A-Z]:)/, '$1');
@@ -75,6 +82,8 @@ function archigosLeaders() {
       source: 'Archigos'
     });
   }
+  // Each list in order of its start (a stable sort, so leaders who took office together keep Archigos's order).
+  for (const list of Object.values(byKey)) list.sort((a, b) => a.start.localeCompare(b.start));
   return byKey;
 }
 
@@ -95,44 +104,55 @@ async function sparql(query) {
 const val = (b, k) => b[k]?.value ?? null;
 const day = v => v ? v.slice(0, 10) : null;
 
-// Heads of state (P35) and government (P6) with dates, for every covered entity.
+// Heads of state (P35) and government (P6) with dates, for every covered entity. Each date keeps its precision
+// (fixer, D7, 21 November 2026): a start or end Wikidata gives only to the year or month carries startPrecision or
+// endPrecision ('year', 'month'), which the page shows as the year or the month, never as 1 January; a day has none.
+const PREC = { 11: 'day', 10: 'month', 9: 'year' };
 async function wikidataOffices() {
   const qids = [...new Set(Object.values(COUNTRIES).flatMap(c => c.qids))];
   const rows = await sparql(`
-    SELECT ?country ?prop ?person ?personLabel ?start ?end ?article WHERE {
+    SELECT ?country ?prop ?person ?personLabel ?start ?startPrec ?end ?endPrec ?article WHERE {
       VALUES ?country { ${qids.map(q => 'wd:' + q).join(' ')} }
       VALUES ?prop { p:P35 p:P6 }
       ?country ?prop ?st .
       ?st ?ps ?person . FILTER(?ps IN (ps:P35, ps:P6))
-      OPTIONAL { ?st pq:P580 ?start }
-      OPTIONAL { ?st pq:P582 ?end }
+      OPTIONAL { ?st pqv:P580 [ wikibase:timeValue ?start ; wikibase:timePrecision ?startPrec ] }
+      OPTIONAL { ?st pqv:P582 [ wikibase:timeValue ?end ; wikibase:timePrecision ?endPrec ] }
       OPTIONAL { ?article schema:about ?person ; schema:isPartOf <https://en.wikipedia.org/> }
       SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
     }`);
   const qidToKey = {};
   for (const [key, c] of Object.entries(COUNTRIES)) for (const q of c.qids) (qidToKey[q] ||= []).push(key);
   const out = {};
+  const coarse = p => (p && PREC[p] !== 'day' ? PREC[p] || 'year' : null);
   for (const b of rows) {
     const qid = val(b, 'country').split('/').pop();
     const office = val(b, 'prop').endsWith('P35') ? 'hos' : 'hog';
     const start = day(val(b, 'start'));
     const end = day(val(b, 'end'));
     if (!start || (end && end < START)) continue;
+    const sp = coarse(val(b, 'startPrec')), ep = end ? coarse(val(b, 'endPrec')) : null;
     for (const key of qidToKey[qid] || []) {
       (out[key] ||= []).push({
         office, full: val(b, 'personLabel'), url: val(b, 'article'), start, end,
+        ...(sp ? { startPrecision: sp } : {}), ...(ep ? { endPrecision: ep } : {}),
         qid: val(b, 'person').split('/').pop()
       });
     }
   }
-  // De-duplicate the same person/office/start reported through several entities.
+  // De-duplicate the same person/office/start reported through several entities; and where the same person holds the
+  // same office from a date given to the day, a statement of theirs that starts in that year but is given only to the
+  // year is the same term less precisely dated, and is dropped (D7: Dick Schoof, 2024 on Q29999 and 2 July 2024 on Q55).
   for (const key of Object.keys(out)) {
     const seen = new Set();
-    out[key] = out[key].filter(x => { const k = `${x.office}|${x.qid}|${x.start}`; if (seen.has(k)) return false; seen.add(k); return true; })
+    const list = out[key].filter(x => { const k = `${x.office}|${x.qid}|${x.start}`; if (seen.has(k)) return false; seen.add(k); return true; });
+    out[key] = list.filter(x => !(x.startPrecision && list.some(y => y !== x && y.office === x.office && y.qid === x.qid && !y.startPrecision && y.start.slice(0, 4) === x.start.slice(0, 4))))
       .sort((a, b) => a.start.localeCompare(b.start));
   }
   return out;
 }
+// A leader's end taken from the next office holder's start keeps that start's precision.
+const endFrom = (l, o) => { l.end = o.start; if (o.startPrecision) l.endPrecision = o.startPrecision; else delete l.endPrecision; };
 
 // After Archigos ends (2015), continue with whichever office Archigos tracked for that country.
 function extendLeaders(archigos, offices) {
@@ -151,8 +171,8 @@ function extendLeaders(archigos, offices) {
     last.end = null;
     const later = off.filter(o => o.office === office && o.start > CUTOFF && o.full)
       .filter(o => !(match && o.qid === match.qid));
-    if (later.length) last.end = later[0].start;
-    else if (match?.end && match.end > CUTOFF) last.end = match.end;
+    if (later.length) endFrom(last, later[0]);
+    else if (match?.end && match.end > CUTOFF) { last.end = match.end; if (match.endPrecision) last.endPrecision = match.endPrecision; }
     // Archigos often gives surnames only; take full names and links from Wikidata office holders.
     for (const l of list) {
       if (l.full) continue;
@@ -162,8 +182,11 @@ function extendLeaders(archigos, offices) {
       if (hit) { l.full = hit.full; l.url = hit.url; }
     }
     for (const [i, o] of later.entries()) {
+      const next = later[i + 1];
       list.push({ name: o.full.split(' ').at(-1), full: o.full, url: o.url, start: o.start,
-        end: o.end || (later[i + 1]?.start ?? null), entry: null, exit: null, exitHow: null, source: 'Wikidata' });
+        end: o.end || (next?.start ?? null), entry: null, exit: null, exitHow: null, source: 'Wikidata',
+        ...(o.startPrecision ? { startPrecision: o.startPrecision } : {}),
+        ...(o.end ? (o.endPrecision ? { endPrecision: o.endPrecision } : {}) : next?.startPrecision ? { endPrecision: next.startPrecision } : {}) });
     }
     archigos[key] = list;
   }
@@ -233,7 +256,8 @@ function leaderEvents(leaders) {
       if (l.start < START) continue;
       const who = l.full || l.name;
       const how = l.entry === 'Irregular' ? ' (irregular seizure of power)' : l.entry === 'Foreign Imposition' ? ' (imposed by a foreign power)' : '';
-      (out[key] ||= []).push({ date: l.start, type: l.entry === 'Irregular' ? 'coup' : 'leader', text: `${who} takes power${how}`, url: l.url });
+      // A start Wikidata gives only to the year (Robert Abela, 2020) is an event of that year, shown as the year (D7).
+      (out[key] ||= []).push({ date: l.start, type: l.entry === 'Irregular' ? 'coup' : 'leader', text: `${who} takes power${how}`, url: l.url, ...(l.startPrecision && l.startPrecision !== 'day' ? { precision: l.startPrecision } : {}) });
     }
   }
   return out;
@@ -267,15 +291,32 @@ const archigos = archigosLeaders();
 console.log('querying Wikidata offices…');
 const offices = await wikidataOffices();
 const leaders = extendLeaders(archigos, offices);
+// An Archigos leader with no article of its own keeps the one the file being replaced gave it (the same state, start
+// and Archigos name; its `archigos` start and name where wikidata-leaders.mjs has since given it Wikidata's), so
+// resolve-leaders.mjs searches only for the leaders never found. Its search results change from run to run: on
+// 21 November 2026 a rebuild without this turned Siim Kallas (2002) into Kaja Kallas and Petar Stambolić (1982) into
+// Ivan Stambolić; the file it replaced named the Prime Minister and the President of the Presidency of those dates.
+let before = {};
+try { before = JSON.parse(readFileSync(path('data/countries.json'), 'utf8')); } catch { /* first run */ }
+for (const [key, list] of Object.entries(leaders)) {
+  const prev = before.countries?.[key]?.leaders || [];
+  for (const l of list) {
+    if (l.url || l.source !== 'Archigos') continue;
+    const p = prev.find(x => x.url && x.name === l.name && (x.archigos?.start || x.start) === l.start);
+    if (p) { l.url = p.url; l.full = (p.archigos ? p.archigos.full : p.full) || p.full; }
+  }
+}
 console.log('querying Wikidata elections…');
 const elec = await elections();
 console.log('checking Wikipedia year pages…');
 const years = await yearPages();
+console.log('querying Wikidata statehood…');
+const states = statehood(await statements());
 const lEvents = leaderEvents(leaders);
 
-// Lists the sources above leave short of the present, completed by hand (leader-corrections.mjs) before the spans
-// are worked out from them; then each state's elections only inside its spans, so elections shared between
-// predecessor and successor items (Weimar and modern Germany) land on the right state.
+// Lists the sources above leave short of the present, completed by hand (leader-corrections.mjs); then each state's
+// statehood and spans (from Wikidata, not from the leader list), and its elections only inside its spans, so elections
+// shared between predecessor and successor items (Weimar and modern Germany) land on the right state.
 const countries = {};
 for (const [key, c] of Object.entries(COUNTRIES)) {
   countries[key] = {
@@ -287,18 +328,16 @@ for (const [key, c] of Object.entries(COUNTRIES)) {
   };
 }
 for (const [key, c] of Object.entries(countries)) correctCountry(key, c);
+applyStatehood(countries, states);
 for (const [key, c] of Object.entries(countries)) {
-  c.spans = coverSpans(c.leaders);
   const within = d => c.spans.some(([s, e]) => d >= s && (!e || d <= e));
   c.events = [...c.events, ...(elec[key] || []).filter(e => e.date >= START && within(e.date))];
 }
 const bordersTo = Math.max(...rows.map(r => r.t));
 const bEvents = borderEvents(rows, countries, (k, d) => displayName(k, countries[k].name, d), FIRST_YEAR, bordersTo);
-for (const [key, c] of Object.entries(countries)) c.events = [...c.events, ...(bEvents[key] || [])].sort((a, b) => a.date.localeCompare(b.date));
+for (const [key, c] of Object.entries(countries)) c.events = [...c.events, ...(bEvents[key] || [])].sort(byDay);
 // The election corrections last, once every election is in (applyCorrections does both steps the same way).
 correctElections(countries);
-let before = {};
-try { before = JSON.parse(readFileSync(path('data/countries.json'), 'utf8')); } catch { /* first run */ }
 writeFileSync(path('data/countries.json'), JSON.stringify(document({
   built: new Date().toISOString().slice(0, 10), bordersBuilt: before.bordersBuilt || null, firstYear: FIRST_YEAR, lastYear: LAST_YEAR, bordersTo, countries
 })));

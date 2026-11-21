@@ -26,6 +26,7 @@
 // election-corrections.mjs (17 November 2026), so both ways of applying the corrections keep them.
 import { LISTS } from './leader-lists.mjs';
 import { ELECTIONS, correctElections } from './election-corrections.mjs';
+import { byDay } from './retro-shape.mjs';
 
 const W = t => `https://en.wikipedia.org/wiki/${encodeURIComponent(t.replace(/ /g, '_'))}`;
 const P = (full, start, end, title = full) =>
@@ -147,6 +148,10 @@ export const CORRECTIONS = {
   Q211: { edit: { '2000-05-05': { url: W('Andris Bērziņš (prime minister)') } } },
   Q20: { edit: { '1926-03-03': { url: W('Ivar Lykke (politician)') } } },
   Q189: { edit: { '1963-11-14': { url: W('Bjarni Benediktsson (born 1908)') } } },
+  // Czechia's first Prime Minister, Archigos's "Klaus" of 1 January 1993, had been linked to Josef Klaus, Austria's
+  // Chancellor of 1964-70 (fixer, R2, 21 November 2026): he is Václav Klaus (Q57434), whom Q213's head of government
+  // (P6) statement, the build's own Wikidata office holders, gives from 1 January 1993 to 2 January 1998.
+  Q213: { edit: { '1993-01-01': { full: 'Václav Klaus', url: W('Václav Klaus') } } },
   // RT-04: whole lists, each starting with its first entry.
   ...Object.fromEntries(Object.entries(LISTS).map(([key, l]) => [key, { from: l.leaders[0].start, leaders: l.leaders, offices: l.offices }]))
 };
@@ -201,7 +206,7 @@ export function correctCountry(key, c) {
     // Leader events from `from` on follow the corrected list.
     const events = (c.events || []).filter(e => !(['leader', 'coup'].includes(e.type) && e.date >= fix.from));
     for (const l of c.leaders) if (l.start >= fix.from && l.start >= '1926-01-01') events.push(arrival(l));
-    c.events = events.sort((a, b) => a.date.localeCompare(b.date));
+    c.events = events.sort(byDay);
   }
   if (fix.offices) {
     // Keep the party tags build-parties.mjs gave an office-holder already in the list.

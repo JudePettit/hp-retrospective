@@ -45,8 +45,10 @@ async function resolveQuery(q, surname) {
 // Undo earlier matches that landed on an article about a term of office rather than the person.
 for (const c of Object.values(data.countries)) for (const l of c.leaders) if (l.url && BAD_TITLE.test(decodeURIComponent(l.url.split('/wiki/')[1] || '').replace(/_/g, ' '))) { l.url = null; l.full = null; }
 const todo = [];
-// A leader with a Wikidata id comes from a hand-checked list (leader-lists.mjs): no article means there is none.
-for (const c of Object.values(data.countries)) for (const l of c.leaders) if (!l.url && l.name && !l.qid) todo.push([c, l]);
+// A leader with a Wikidata id, or any leader of the hand-checked lists (leader-lists.mjs, source "leader-lists"), has
+// been read by hand: no article means there is none. (Until 21 November 2026 only the id was checked, so Luigi
+// Mularoni, Captain Regent in 1938, whom no Wikidata item names, was given Antonella Mularoni's article.)
+for (const c of Object.values(data.countries)) for (const l of c.leaders) if (!l.url && l.name && !l.qid && l.source !== 'leader-lists') todo.push([c, l]);
 console.log(`${todo.length} leaders without an article`);
 const memo = new Map();
 let found = 0;

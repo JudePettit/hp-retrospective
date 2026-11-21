@@ -24,8 +24,9 @@
 //    points, keeping every shape, and TopoJSON quantised to 1/100,000 of the extent (the CShapes build's settings), to
 //    build/borders.topo.json. Stops if the file is over 1.5 MB gzipped (LIMIT_GZ), or lacks the object "borders".
 // 4. Reads data/countries.json; re-keys it by Wikidata key if it is in the old shape (retro-shape.mjs rekey); gives
-//    each state its spans from its leader list (coverSpans); drops every border and statehood event (the CShapes
-//    ones); adds a border event for each year in which a covered state's rows hold an area more than 1% different
+//    each state its spans from its statehood (build-statehood.mjs spansOf; since 21 November 2026, Wikidata's, and the
+//    build stops if a state has none); drops every border event and any statehood event that is not Wikidata's (the
+//    CShapes ones); adds a border event for each year in which a covered state's rows hold an area more than 1% different
 //    from the year before (borderEvents: dated 1 January of that year, precision "year", src "cliopatria"; its text
 //    says Cliopatria's border differs from the year before's). `built` (the leaders' build) stays as it is;
 //    `bordersBuilt` is today, or stays as it was when the borders file comes out byte for byte the same.
@@ -37,7 +38,8 @@ import { gzipSync, inflateRawSync, crc32 } from 'node:zlib';
 import { execFileSync } from 'node:child_process';
 import { COUNTRIES, FIRST_YEAR } from './countries.mjs';
 import { CLIO, stateOf } from './cliopatria-states.mjs';
-import { coverSpans, borderEvents, keyIn, rekey, document, FORMAT } from './retro-shape.mjs';
+import { borderEvents, keyIn, rekey, document, FORMAT, byDay } from './retro-shape.mjs';
+import { spansOf } from './build-statehood.mjs';
 import { displayName } from '../names.mjs';
 
 const ROOT = new URL('..', import.meta.url);
@@ -136,14 +138,18 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
   // 4. countries.json.
   const doc = JSON.parse(readFileSync(path('data/countries.json'), 'utf8'));
   const countries = doc.format === FORMAT ? doc.countries : rekey(doc.countries);
-  for (const c of Object.values(countries)) {
-    c.spans = coverSpans(c.leaders);
-    c.events = (c.events || []).filter(e => e.type !== 'border' && e.type !== 'statehood');
+  for (const [k, c] of Object.entries(countries)) {
+    // The spans are the statehood's (build-statehood.mjs, Wikidata), which this build does not change.
+    if (!Array.isArray(c.statehood)) throw new Error(`${k} has no statehood: run scripts/build-statehood.mjs (or npm run build-data) first`);
+    c.spans = spansOf(c.statehood);
+    // The border events are this build's; the statehood events (Wikidata's) stay. Any statehood event without
+    // src "wikidata" is the CShapes data's, from before 20 November 2026, and goes.
+    c.events = (c.events || []).filter(e => e.type !== 'border' && (e.type !== 'statehood' || e.src === 'wikidata'));
   }
   const rows = features.map(f => f.properties);
   const name = (k, date) => displayName(k, countries[k].name, date);
   const added = borderEvents(rows, countries, name, FIRST_YEAR, BORDERS_TO);
-  for (const [k, list] of Object.entries(added)) countries[k].events = [...countries[k].events, ...list].sort((a, b) => a.date.localeCompare(b.date));
+  for (const [k, list] of Object.entries(added)) countries[k].events = [...countries[k].events, ...list].sort(byDay);
   const same = existsSync(path('data/borders.topo.json')) && readFileSync(path('data/borders.topo.json'), 'utf8') === topoText;
   const bordersBuilt = same && doc.bordersBuilt ? doc.bordersBuilt : new Date().toISOString().slice(0, 10);
   const out = document({ built: doc.built, bordersBuilt, firstYear: doc.firstYear, lastYear: doc.lastYear, bordersTo: BORDERS_TO, parties: doc.sources?.parties, countries });

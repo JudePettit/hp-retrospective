@@ -7,6 +7,8 @@
 // country `key` (its Wikidata item, as countries.mjs keys the states) if it was filed elsewhere, its date is set to
 // `date`, and it is added to `key` if the fetch missed it.
 // `wd` is the election's Wikidata item, and `sources` say where the date was read (checked on 17 November 2026).
+import { byDay } from './retro-shape.mjs';
+
 export const ELECTIONS = [
   {
     key: 'Q757', wd: 'Q103768254', title: '2025 Vincentian general election', date: '2025-11-27',
@@ -43,7 +45,11 @@ export const ELECTIONS = [
 const W = t => `https://en.wikipedia.org/wiki/${encodeURIComponent(t.replace(/ /g, '_'))}`;
 const isVote = e => e.type === 'election' || e.type === 'referendum';
 
-// Applies the election corrections to { key: { events } } in place.
+// Applies the election corrections to { key: { events, spans } } in place. Like every election the build keeps, a
+// corrected one is listed only inside its state's spans (its statehood, from Wikidata): Grenada's 1967 election, held
+// when Grenada was an associated state, seven years before its independence in 1974, is taken from Spain and not
+// listed (fixer, D3, 21 November 2026; until then the correction added it outside Grenada's statehood).
+const inside = (c, date) => !c.spans || c.spans.some(([s, e]) => date >= s && (!e || date <= e));
 export function correctElections(countries) {
   for (const fix of ELECTIONS) {
     const url = W(fix.title);
@@ -57,7 +63,7 @@ export function correctElections(countries) {
     const found = events.filter(e => isVote(e) && e.url === url);
     if (found.length) for (const e of found) e.date = fix.date;
     else events.push({ date: fix.date, type: /referendum/i.test(fix.title) ? 'referendum' : 'election', text: fix.title, url });
-    home.events = events.sort((a, b) => a.date.localeCompare(b.date));
+    home.events = events.filter(e => !(isVote(e) && e.url === url && !inside(home, e.date))).sort(byDay);
   }
   return countries;
 }

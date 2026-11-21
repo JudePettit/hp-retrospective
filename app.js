@@ -1,6 +1,8 @@
 /* Political Retrospective (VM · Retrospective Intelligence): who led each country, and which political events happened,
-   year by year. Borders: Cliopatria v0.2.1 (CC BY 4.0), by the year, to 2024. Leaders: Archigos 4.1 + Wikidata.
-   Events: derived + Wikidata elections. States are keyed by their Wikidata item (data/countries.json, retro-countries/2).
+   year by year. Borders: Cliopatria v0.2.1 (CC BY 4.0), by the year, to 2024. Statehood: Wikidata. Leaders: Wikidata
+   names and dates where they agree with Archigos 4.1 within 31 days, else Archigos; how each took and left office,
+   Archigos. Events: derived + Wikidata elections and statehood. States are keyed by their Wikidata item
+   (data/countries.json, retro-countries/2).
    Map colours are CSS custom properties over PRP tokens (styles.css), written into SVG fills as var(...), so the map
    follows the light/dark theme without redrawing; the GIF export reads the same tokens when it draws.
    The years shown follow the timeline (prp-period.js, a copy of jdpi's design/prp-period.js): its start rests on the
@@ -16,7 +18,7 @@ const TODAY = new Date().toISOString().slice(0, 10);
 const state = { year: 2026, from: 2026, selected: null, data: null, features: [], animating: false, view: 'map', sort: { key: 'name', dir: 1 } };
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const KIND = { leader: 'leader', coup: 'irregular', election: 'election', referendum: 'referendum', border: 'border' };
+const KIND = { leader: 'leader', coup: 'irregular', election: 'election', referendum: 'referendum', border: 'border', statehood: 'statehood' };
 
 let svg, g, projection, path, zoom;
 
@@ -31,7 +33,8 @@ const held = y => Math.min(y, state.data.bordersTo);
 const rowsIn = y => state.features.filter(f => f.properties.f <= held(y) && held(y) <= f.properties.t);
 // The state a row stands for in a year (VM's crosswalk, written into the row as c, cf and ct), if any.
 const keyIn = (p, y) => (p.f <= y && y <= p.t && p.c && (p.cf == null || y >= p.cf) && (p.ct == null || y <= p.ct) ? p.c : null);
-// A state is covered on a date inside one of its spans (from its leader list, data/countries.json).
+// A state is covered on a date inside one of its spans: the spells of its statehood, from Wikidata (data/countries.json
+// statehood; since 21 November 2026, no longer its leader list).
 const coveredOn = (key, date) => (country(key)?.spans || []).some(([s, e]) => s <= date && (!e || date <= e));
 // The covered state a drawn row stands for in year y: its state, while that state is covered.
 const stateOfRow = (f, y) => { const k = keyIn(f.properties, held(y)); return k && coveredOn(k, dateFor(y)) ? k : null; };
@@ -41,9 +44,26 @@ const single = () => state.from === state.year;
 const span = (a = state.from, b = state.year) => (a === b ? String(b) : `${a}–${b}`);
 const inYears = (start, end, a, b = a) => start <= `${b}-12-31` && (!end || end >= `${a}-01-01`);
 
+// Inside the state's statehood (review D3 and R1, 21 November 2026). A leader list can start before the statehood
+// (Archigos starts Ukraine's Kravchuk on 18 July 1990, before its independence on 24 August 1991) or run past its end;
+// such leaders and their arrivals are listed apart in the state's panel ("While not an independent state") and left
+// out of the leaders, the overview, the counts, the colours and the year's list of key events.
+const covers = (key, lo, hi) => (country(key)?.spans || []).some(([s, e]) => s <= hi && (!e || e >= lo));
+const coversYears = (key, a, b = a) => covers(key, `${a}-01-01`, `${b}-12-31`);
+// Whether the statehood covers the whole of the years shown (a state that began or ended in them does not).
+const coversAll = (key, a, b = a) => (country(key)?.spans || []).some(([s, e]) => s <= `${a}-01-01` && (!e || e >= `${b}-12-31`));
+// A leader inside the statehood in the years shown: some day of its term within them is a day of the statehood.
+const leaderInside = (key, l, a, b = a) => covers(key, l.start > `${a}-01-01` ? l.start : `${a}-01-01`, l.end && l.end < `${b}-12-31` ? l.end : `${b}-12-31`);
+// An event inside the statehood: a statehood event always; one given to the year (a border) if the statehood touches
+// that year; any other on its day.
+const eventInside = (key, e) => e.type === 'statehood' || (e.precision === 'year' ? coversYears(key, +e.date.slice(0, 4)) : coveredOn(key, e.date));
 function leadersIn(key, a, b = a) {
-  return (country(key)?.leaders || []).filter(l => inYears(l.start, l.end, a, b));
+  return (country(key)?.leaders || []).filter(l => inYears(l.start, l.end, a, b) && leaderInside(key, l, a, b));
 }
+const leadersOutside = (key, a, b = a) => (country(key)?.leaders || []).filter(l => inYears(l.start, l.end, a, b) && !leaderInside(key, l, a, b));
+// Whether VM holds a leader in office for the state on a date. A state that exists then may have none: Archigos's list
+// for the Netherlands runs from de Geer, to 14 May 1940, to Schermerhorn, from 24 June 1945.
+const inOffice = (key, date) => (country(key)?.leaders || []).some(l => l.start <= date && (!l.end || l.end >= date));
 // Leaders in groups that took office together (the same first day, neither for a single day), in order: San Marino's
 // two Captains Regent, even when one leaves early (1930).
 function coLeaders(leaders) {
@@ -54,37 +74,58 @@ function coLeaders(leaders) {
 }
 const lastEnd = g => g.map(l => l.end || '9999-12-31').sort().at(-1);
 const andList = l => (l.length < 2 ? l.join('') : `${l.slice(0, -1).join(', ')} and ${l.at(-1)}`);
+// Other office holders inside the statehood (outside it, an office belongs to no state of this record: Germany's
+// Q41304 after 1945 carries Q183's office holders for the elections only).
 function officesIn(key, a, b, leaders) {
-  const names = new Set(leaders.map(l => (l.full || l.name).toLowerCase()));
-  return (country(key)?.offices || []).filter(o => inYears(o.start, o.end, a, b) && !names.has((o.full || '').toLowerCase()));
+  // The leader is left out by name or by article: an office holder's name is Wikidata's English label, a leader's the
+  // article's title ("Isaac Shamir" and "Yitzhak Shamir" are one person: review D1, fixer).
+  const names = new Set(leaders.map(l => (l.full || l.name).toLowerCase())), urls = new Set(leaders.map(l => l.url).filter(Boolean));
+  // One row for a person in one office: Wikidata gives Wilhelmina's reign twice (from 1890 and from her coming of age
+  // in 1898), and the first is kept (review R6).
+  const once = new Set();
+  return (country(key)?.offices || []).filter(o => inYears(o.start, o.end, a, b) && leaderInside(key, o, a, b) && !names.has((o.full || '').toLowerCase()) && !(o.url && urls.has(o.url)))
+    .filter(o => { const k = `${o.office}|${o.url || o.full}`; if (once.has(k)) return false; once.add(k); return true; });
 }
+const eventsAll = (key, a, b = a) => (country(key)?.events || []).filter(e => e.date >= `${a}-01-01` && e.date <= `${b}-12-31`);
 function eventsIn(key, a, b = a) {
-  return (country(key)?.events || []).filter(e => e.date >= `${a}-01-01` && e.date <= `${b}-12-31`);
+  return eventsAll(key, a, b).filter(e => eventInside(key, e));
 }
+const eventsOutside = (key, a, b = a) => eventsAll(key, a, b).filter(e => !eventInside(key, e));
 // The years after the first of those shown in which this state's border in Cliopatria differs from the year before's
 // (its border events, by the year): the frames of the border animation.
 function borderChanges(key, a, b = a) {
   return eventsIn(key, a, b).filter(e => e.type === 'border').map(e => +e.date.slice(0, 4)).filter((y, i, l) => y > a && l.indexOf(y) === i).sort((p, q) => p - q);
 }
-// The most significant thing that happened to a state in the years shown: an irregular seizure of power, else a new
-// leader, else a year in which its border in Cliopatria differs from the year before's (which may be a redrawing of
-// Cliopatria's rows, #border-limit, so every label says the border differs, never that it changed: review X3).
+// The most significant thing that happened to a state in the years shown: its independence, union or end as a state
+// (Wikidata's statehood events), else an irregular seizure of power, else a new leader, else a year in which its border
+// in Cliopatria differs from the year before's (which may be a redrawing of Cliopatria's rows, #border-limit, so every
+// label says the border differs, never that it changed: review X3).
 function statusFor(key, a, b = a) {
   if (!country(key)) return 'none';
   const ev = eventsIn(key, a, b);
+  if (ev.some(e => e.type === 'statehood')) return 'statehood';
   if (ev.some(e => e.type === 'coup')) return 'irregular';
   if (ev.some(e => e.type === 'leader')) return 'change';
   if (ev.some(e => e.type === 'border')) return 'border';
   return 'steady';
 }
-const FILL = { irregular: 'var(--c-irregular)', change: 'var(--c-change)', border: 'var(--c-border)', steady: 'var(--c-steady)' };
-const STATUS_LABEL = { irregular: 'Irregular seizure of power', change: 'New leader', border: 'Cliopatria’s border differs', steady: 'No change' };
+const FILL = { statehood: 'var(--c-statehood)', irregular: 'var(--c-irregular)', change: 'var(--c-change)', border: 'var(--c-border)', steady: 'var(--c-steady)' };
+const STATUS_LABEL = { statehood: 'Independence, union or end of a state', irregular: 'Irregular seizure of power', change: 'New leader', border: 'Cliopatria’s border differs', steady: 'No change' };
 const poss = n => (/s$/.test(n) ? `${n}’` : `${n}’s`); // "United States’ border", "Germany’s border"
-const fmt = d => {
+// A date at its precision (review D7, 21 November 2026): Wikidata gives some office holders' dates only to the year or
+// the month (Robert Abela's start, "2020"), shown as the year or "Jan 2020", never as 1 January.
+const fmt = (d, precision = 'day') => {
   if (!d) return 'present';
   const [y, m, dd] = d.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, dd)).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+  if (precision === 'year') return String(y);
+  return new Date(Date.UTC(y, m - 1, dd)).toLocaleDateString('en-GB', { ...(precision === 'month' ? {} : { day: 'numeric' }), month: 'short', year: 'numeric', timeZone: 'UTC' });
 };
+// A leader's or office holder's term, each end at its precision.
+const term = p => `${fmt(p.start, p.startPrecision)} – ${fmt(p.end, p.endPrecision)}`;
+// A dated event at the precision its source gives: a year-only date as the year, a month as "Aug 1991". Wikidata often
+// records only the year of an election, and Cliopatria's borders are by the year.
+const whenOf = e => (e.precision === 'year' || (/^(election|referendum)$/.test(e.type) && e.date.endsWith('-01-01')) ? e.date.slice(0, 4)
+  : e.precision === 'month' ? new Date(`${e.date.slice(0, 7)}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' }) : fmt(e.date));
 // Party memberships (from Wikidata) that applied during the years shown; undated memberships always apply.
 function partiesAt(p, a, b = a) {
   const all = p.parties || [];
@@ -104,7 +145,7 @@ function statesOn(date) {
   return [...seen.values()];
 }
 // Why a year's count is smaller than the coverage in the status line, worked out per country. A covered country is
-// counted in a year while it is covered (its spans, from its leader list) and Cliopatria has a row for it. One that is
+// counted in a year while it is covered (its spans, from its statehood in Wikidata) and Cliopatria has a row for it. One that is
 // covered but has no row that year (San Marino and Liechtenstein in every year, Poland from 1944 to 1952…) is named:
 // VM cannot place it on a free border. The rest were not states then: before (not yet), after (no longer), or between
 // two spells of independence (the Baltic states, 1940–91).
@@ -242,6 +283,7 @@ function renderPanel() {
         <div class="prp-kpi"><span>Irregular seizures</span><b>${count('coup')}</b></div>
         <div class="prp-kpi"><span>Elections, referendums</span><b>${count('election', 'referendum')}</b></div>
         <div class="prp-kpi"><span>Borders that differ in Cliopatria</span><b>${count('border')}</b></div>
+        <div class="prp-kpi"><span>Independence, union or end</span><b>${count('statehood')}</b></div>
       </div>
       <p class="note">${one ? 'Select a country to see who was in charge and its key events. Drag the slider or press ▶ to move through the years; drag its hollow start handle back to cover a period of years.' : `Everything recorded from ${a} to ${y}. Select a country to see who was in charge and its key events; bring the hollow start handle back onto the end for a single year.`}</p>
       <h3>Key events ${one ? `in ${y}` : when}${all.length > 120 ? ` · the first 120 of ${all.length}` : ''}</h3>
@@ -256,6 +298,9 @@ function renderPanel() {
   const leaders = leadersIn(key, a, y);
   const offices = officesIn(key, a, y, leaders);
   const events = eventsIn(key, a, y);
+  // What VM's lists hold for the state at times in these years when it was not an independent state (D3, R1).
+  const outside = { leaders: leadersOutside(key, a, y), events: eventsOutside(key, a, y) };
+  const existed = coversYears(key, a, y);
   const changes = borderChanges(key, a, y);
   // Wikipedia's "<year> in <country>" events are read for one year; over a period, its year pages are linked instead.
   const page = one && c.yearPages.includes(y) ? `${y} in ${c.yearPage}` : null;
@@ -271,21 +316,26 @@ function renderPanel() {
     <h2>${esc(name)}</h2>
     <p class="sub">${placed ? when : coveredOn(key, date) ? `${when} · ${esc(cannotPlace([name], y))}, so the map does not draw it` : `Not an independent state at the end of ${y}`}</p>
     <h3>Political overview of ${when}</h3>
-    <p class="overview">${esc(overviewText(name, a, y, leaders, offices, events, [...ruling.values()]))}</p>
+    <p class="overview">${esc(overviewText(name, a, y, leaders, offices, events, [...ruling.values()], { existed, whole: coversAll(key, a, y), outside: outside.leaders }))}</p>
     <div id="wiki-events" class="wiki-events">${page ? '<p class="empty">Loading events from Wikipedia…</p>' : pages.length ? `<p class="note">Wikipedia, year by year: ${pages.map(p => `<a href="${wiki(p)}" target="_blank" rel="noopener">${esc(p.slice(0, 4))}</a>`).join(' · ')}</p>` : ''}</div>
     ${ruling.size ? `<h3>Parties in power ${one ? `in ${y}` : when}</h3><div class="parties">${[...ruling.values()].map(m => `<a class="party" href="${esc(m.url)}" target="_blank" rel="noopener">${esc(m.name)}</a>`).join('')}</div><p class="note" style="margin-top:6px">Party of each leader in office, from Wikidata. Where Wikidata has no membership dates, every party the person belonged to is shown.</p>` : ''}
-    <h3>In charge during ${when}</h3>
-    ${leaders.length ? leaders.map(l => `<div class="leader">
-        <div class="who"><a href="${esc(leaderLink(l, key))}" target="_blank" rel="noopener">${esc(l.full || l.name)}</a>${l.entry === 'Irregular' ? '<span class="tag irregular">irregular entry</span>' : ''}</div>
-        <div class="meta">${fmt(l.start)} – ${fmt(l.end)}${l.entry && l.entry !== 'Regular' && l.entry !== 'Irregular' ? ` · entry: ${esc(l.entry)}` : ''}${l.exit && l.exit !== 'Regular' ? ` · exit: ${esc(l.exit)}` : ''}</div>
-        ${partyChips(l, a, y) ? `<div class="parties">${partyChips(l, a, y)}</div>` : ''}
-      </div>`).join('') : `<p class="empty">No leader recorded for ${one ? 'this year' : 'these years'}.</p>`}
+    ${existed ? `<h3>In charge during ${when}</h3>
+    ${leaders.length ? leaders.map(l => leaderItem(l, key, a, y)).join('')
+    // One line where VM holds no leader (review R6): the date's, when the state exists then with nobody in office.
+    : `<p class="empty">${coveredOn(key, date) && !inOffice(key, date) ? `VM holds no leader for ${fmt(date)}.` : `No leader recorded for ${one ? 'this year' : 'these years'}.`}</p>`}
+    ${leaders.length && coveredOn(key, date) && !inOffice(key, date) ? `<p class="note">VM holds no leader for ${fmt(date)}.</p>` : ''}` : ''}
     ${offices.length ? `<h3>Also in office</h3>${offices.map(o => `<div class="leader">
         <div class="who"><a href="${esc(o.url || wiki(o.full))}" target="_blank" rel="noopener">${esc(o.full)}</a><span class="tag office">${o.office === 'hos' ? 'Head of state' : 'Head of government'}</span></div>
-        <div class="meta">${fmt(o.start)} – ${fmt(o.end)}</div>
+        <div class="meta">${term(o)}</div>
         ${partyChips(o, a, y) ? `<div class="parties">${partyChips(o, a, y)}</div>` : ''}</div>`).join('')}` : ''}
-    <h3>Key events ${one ? `in ${y}` : when}</h3>
-    ${events.length ? `<ul class="events">${events.map(e => eventItem(e)).join('')}</ul>` : `<p class="empty">No recorded events ${one ? 'this year' : 'in these years'}.</p>`}
+    ${existed || events.length ? `<h3>Key events ${one ? `in ${y}` : when}</h3>
+    ${events.length ? `<ul class="events">${events.map(e => eventItem(e)).join('')}</ul>` : `<p class="empty">No recorded events ${one ? 'this year' : 'in these years'}.</p>`}` : ''}
+    ${outside.leaders.length || outside.events.length ? `<div class="outside">
+      <h3>While not an independent state</h3>
+      <p class="note">VM’s lists hold these for ${esc(name)} at times ${one ? `in ${y}` : `from ${a} to ${y}`} when it was not an independent state. They are not counted in the year’s figures.</p>
+      ${outside.leaders.map(l => leaderItem(l, key, a, y)).join('')}
+      ${outside.events.length ? `<ul class="events">${outside.events.map(e => eventItem(e)).join('')}</ul>` : ''}
+    </div>` : ''}
     ${changedInYear ? `<h3>Cliopatria’s border in ${y}</h3>
       <p class="note">Cliopatria gives borders by the year: the map shows ${esc(poss(name))} border for ${y}, which differs in Cliopatria from ${y - 1}’s by more than 1% of its area. That may be a redrawing of Cliopatria’s rows rather than a change of border, and a change within ${y} cannot be shown.</p>` : ''}
     ${changes.length ? `<h3>Cliopatria’s borders, ${when}</h3>
@@ -305,20 +355,31 @@ function renderPanel() {
 
 /* ---------------------------------------------------------------- yearly overview */
 // A short plain-English summary built from the leaders, parties and events of the year, or of the period a..y.
-function overviewText(name, a, y, leaders, offices, events, ruling) {
+// `st`: whether the state existed at some time in the years shown, whether throughout them, and the leaders VM's lists
+// hold for it while it was not an independent state (D3, R1): none of them is said to have led it.
+function overviewText(name, a, y, leaders, offices, events, ruling, st = { existed: true, whole: true, outside: [] }) {
   const who = p => `${p.full || p.name}${partiesAt(p, a, y).length ? ` (${partiesAt(p, a, y).map(m => m.name).join(', ')})` : ''}`;
   const parts = [], one = a === y;
   // Leaders who ruled together (San Marino's two Captains Regent) are joined with "and"; one who left before the other
   // is marked "until", and one who came while the other was still in office "joined by … from".
   const groups = coLeaders(leaders);
-  const together = groups.map(g => andList(g.map(l => `${who(l)}${g.length > 1 && (l.end || '9999-12-31') < lastEnd(g) ? ` (until ${fmt(l.end)})` : ''}`)));
-  const sequence = together.map((t, i) => (!i ? t : groups[i - 1].length > 1 && groups[i][0].start < lastEnd(groups[i - 1]) ? `, joined by ${t} (from ${fmt(groups[i][0].start)})` : `, then ${t}`)).join('');
-  if (leaders.length === 1) parts.push(`${who(leaders[0])} led ${name} throughout ${one ? y : `${a}–${y}`}.`);
-  else if (together.length === 1) parts.push(`${together[0]} led ${name} together throughout ${one ? y : `${a}–${y}`}.`);
+  const together = groups.map(g => andList(g.map(l => `${who(l)}${g.length > 1 && (l.end || '9999-12-31') < lastEnd(g) ? ` (until ${fmt(l.end, l.endPrecision)})` : ''}`)));
+  const sequence = together.map((t, i) => (!i ? t : groups[i - 1].length > 1 && groups[i][0].start < lastEnd(groups[i - 1]) ? `, joined by ${t} (from ${fmt(groups[i][0].start, groups[i][0].startPrecision)})` : `, then ${t}`)).join('');
+  // "Throughout" only where the state existed throughout the years shown; else "in" them (Ukraine in 1991).
+  const through = st.whole ? `throughout ${one ? y : `${a}–${y}`}` : one ? `in ${y}` : `in ${a}–${y}`;
+  if (!st.existed) parts.push(`${name} was not an independent state ${one ? `in ${y}` : `at any time from ${a} to ${y}`}${st.outside.length ? `; VM’s list names ${andList(st.outside.map(who))} for that time` : ''}.`);
+  if (leaders.length === 1) parts.push(`${who(leaders[0])} led ${name} ${through}.`);
+  else if (together.length === 1) parts.push(`${together[0]} led ${name} together ${through}.`);
   else if (leaders.length > 1) parts.push(`${name} had ${leaders.length} leaders ${one ? `in ${y}` : `between ${a} and ${y}`}: ${sequence}.`);
+  if (st.existed && st.outside.length) parts.push(`For the time it was not an independent state, VM’s list also names ${andList(st.outside.map(who))}.`);
   if (offices.length) parts.push(`Also in office: ${offices.map(o => `${who(o)} as ${o.office === 'hos' ? 'head of state' : 'head of government'}`).join('; ')}.`);
   if (ruling.length === 1) parts.push(`The ${ruling[0].name} held power.`);
   const count = t => events.filter(e => e.type === t).length;
+  // Its independence, union or end as a state, from Wikidata, each at the precision Wikidata gives (whenOf).
+  const stately = events.filter(e => e.type === 'statehood');
+  // The cause and the date in one bracket (review R8): "… (German reunification, 3 Oct 1990)".
+  const dated = e => { const t = e.text.replace(/^(.)/, (_, c) => c.toUpperCase()); return /\)$/.test(t) ? `${t.slice(0, -1)}, ${whenOf(e)})` : `${t} (${whenOf(e)})`; };
+  if (stately.length) parts.push(`${stately.map(dated).join('; ')}.`);
   const ev = [];
   if (count('coup')) ev.push(`${count('coup')} irregular seizure${count('coup') > 1 ? 's' : ''} of power`);
   if (count('election')) ev.push(`${count('election')} election${count('election') > 1 ? 's' : ''}`);
@@ -359,12 +420,20 @@ function eventsFromExtract(text) {
     .slice(0, 6);
 }
 
+function leaderItem(l, key, a, y) {
+  return `<div class="leader">
+        <div class="who"><a href="${esc(leaderLink(l, key))}" target="_blank" rel="noopener">${esc(l.full || l.name)}</a>${l.entry === 'Irregular' ? '<span class="tag irregular">irregular entry</span>' : ''}</div>
+        <div class="meta">${term(l)}${l.entry && l.entry !== 'Regular' && l.entry !== 'Irregular' ? ` · entry: ${esc(l.entry)}` : ''}${l.exit && l.exit !== 'Regular' ? ` · exit: ${esc(l.exit)}` : ''}</div>
+        ${partyChips(l, a, y) ? `<div class="parties">${partyChips(l, a, y)}</div>` : ''}
+      </div>`;
+}
+// The day before a date (an ending state is named by the name it had until that day: the Soviet Union, review R8).
+const dayBefore = d => new Date(Date.parse(`${d}T00:00:00Z`) - 864e5).toISOString().slice(0, 10);
 function eventItem(e, cname, key) {
-  const label = cname ? `<a href="#" data-open="${esc(key)}">${esc(displayName(key, cname, e.date))}</a>: ` : '';
+  const on = e.type === 'statehood' && e.kind !== 'independence' ? dayBefore(e.date) : e.date;
+  const label = cname ? `<a href="#" data-open="${esc(key)}">${esc(displayName(key, cname, on))}</a>: ` : '';
   const text = e.url ? `<a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.text)}</a>` : esc(e.text);
-  // Wikidata often records only the year of an election, and Cliopatria's borders are by the year: show just the year.
-  const when = e.precision === 'year' || (/^(election|referendum)$/.test(e.type) && e.date.endsWith('-01-01')) ? e.date.slice(0, 4) : fmt(e.date);
-  return `<li data-type="${e.type}"><time>${when}<span class="kind">${KIND[e.type] || e.type}</span></time>${label}${text}</li>`;
+  return `<li data-type="${e.type}"><time>${whenOf(e)}<span class="kind">${KIND[e.type] || e.type}</span></time>${label}${text}</li>`;
 }
 
 /* ---------------------------------------------------------------- border animation: the period's, year by year */
@@ -469,7 +538,7 @@ async function downloadGif(key, a, y, changes) {
 }
 
 /* ---------------------------------------------------------------- table view */
-const STATUS_ORDER = { irregular: 0, change: 1, border: 2, steady: 3 };
+const STATUS_ORDER = { statehood: 0, irregular: 1, change: 2, border: 3, steady: 4 };
 const COLUMNS = [
   ['name', 'State', r => r.name, ''],
   ['leader', 'In charge', r => (r.leaders.at(-1)?.full || r.leaders.at(-1)?.name || null), ''],
@@ -556,7 +625,7 @@ function setupTabs() {
 function renderCaption() {
   const a = state.from, y = state.year;
   $('#caption').textContent = `States and borders ${dateFor(y) === TODAY ? 'today' : `in ${y}`}, each covered state coloured by what happened to it in ${a === y ? y : `the years ${a}–${y}`}. ` +
-    `Borders: Cliopatria v0.2.1, one border a year; leaders: Archigos 4.1 and Wikidata.${y > state.data.bordersTo ? heldNote() : ''}`;
+    `Borders: Cliopatria v0.2.1, one border a year; statehood: Wikidata; leaders: Wikidata and Archigos 4.1.${y > state.data.bordersTo ? heldNote() : ''}`;
   $('#legend-title').textContent = a === y ? 'This year' : 'In the period';
 }
 
@@ -678,7 +747,12 @@ function setupSearch() {
     state.data = data;
     state.features = topojson.feature(topo, topo.objects.borders).features;
     $('#status').innerHTML = `<span>Coverage <b>${Object.keys(data.countries).length} countries</b> over all the years</span><span>Years <b>${data.firstYear}–present</b></span>` +
-      '<span>Borders <b>Cliopatria v0.2.1</b></span><span>Leaders <b>Archigos 4.1, Wikidata</b></span><span>Events <b>Wikidata, Wikipedia</b></span>';
+      '<span>Borders <b>Cliopatria v0.2.1</b></span><span>Statehood <b>Wikidata</b></span><span>Leaders <b>Wikidata, Archigos 4.1</b></span><span>Events <b>Wikidata, Wikipedia</b></span>';
+    // For how many of Archigos's leaders the names and dates are Wikidata's (review R7), counted from the data: those
+    // that carry Archigos's own dates beside Wikidata's, of those and the ones still on Archigos's.
+    const all = Object.values(data.countries).flatMap(c => c.leaders), moved = all.filter(l => l.archigos).length;
+    const n = x => x.toLocaleString('en-GB');
+    $('#leader-count').textContent = `for ${n(moved)} of the ${n(moved + all.filter(l => l.source === 'Archigos').length)} leaders Archigos counts in office from 1926`;
     drawMap();
     setupTimeline();
     setupSearch();

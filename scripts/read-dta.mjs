@@ -2,6 +2,15 @@
 // Supports numeric types, fixed-width strings and strLs; enough for Archigos 4.1.
 import { readFileSync } from 'node:fs';
 
+// Text as UTF-8, as release 118 should hold it, or as Latin-1 where the bytes are not valid UTF-8. Archigos 4.1's file
+// says release 118 but stores Latin-1 bytes (0xF6 for "ö" in "Niinistö"): read as UTF-8 they became U+FFFD, and the
+// names of Niinistö, Löfven, Løkke Rasmussen, Hernández and Saca González showed a replacement character until
+// 25 November 2026 (review retrospective-2).
+const utf8 = new TextDecoder('utf-8', { fatal: true });
+export function text(bytes) {
+  try { return utf8.decode(bytes); } catch { return Buffer.from(bytes).toString('latin1'); }
+}
+
 export function readDta(path) {
   const buf = readFileSync(path);
   const ascii = (start, end) => buf.toString('latin1', start, end);
@@ -33,7 +42,7 @@ export function readDta(path) {
     const o = Number(buf.readBigUInt64LE(q + 7));
     const t = buf.readUInt8(q + 15);
     const len = buf.readUInt32LE(q + 16);
-    let s = buf.toString('utf8', q + 20, q + 20 + len);
+    let s = text(buf.subarray(q + 20, q + 20 + len));
     if (t === 130) s = s.replace(/\0$/, '');
     strls.set(`${v},${o}`, s);
     q += 20 + len;
@@ -52,7 +61,7 @@ export function readDta(path) {
     for (let k = 0; k < K; k++) {
       const t = types[k];
       let val;
-      if (t <= 2045) val = buf.toString('utf8', off, off + t).replace(/\0.*$/s, '');
+      if (t <= 2045) { const b = buf.subarray(off, off + t), z = b.indexOf(0); val = text(z < 0 ? b : b.subarray(0, z)); }
       else if (t === 32768) {
         const v = buf.readUInt16LE(off);
         const o = buf.readUIntLE(off + 2, 6);

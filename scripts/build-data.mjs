@@ -31,7 +31,7 @@ import { readDta } from './read-dta.mjs';
 import { COUNTRIES, OLD_KEYS, YEAR_IN, FIRST_YEAR, LAST_YEAR } from './countries.mjs';
 import { displayName } from '../names.mjs';
 import { correctCountry } from './leader-corrections.mjs';
-import { correctElections } from './election-corrections.mjs';
+import { correctElections, dropped, voteType, pickDate } from './election-corrections.mjs';
 import { borderEvents, document, byDay } from './retro-shape.mjs';
 import { statements, statehood, applyStatehood } from './build-statehood.mjs';
 
@@ -239,6 +239,32 @@ async function elections() {
     }
   }));
   for (const qid of qids) for (const b of cache[qid] || []) rows.push({ ...b, country: { value: qid }, eLabel: b.title });
+  // Each vote's date at its precision (second reading, 25 November 2026; review front-pages-1). The query above reads
+  // wdt:P585, which gives only the best-ranked values and loses their precision, so Wikidata's "June 2004" came out as
+  // 1 June 2004. This step reads every point in time (P585) of each item the cache holds, with its precision and rank,
+  // once, into build/election-dates.json; pickDate (election-corrections.mjs) chooses the one shown. An item this step
+  // could not read keeps the cache's date, as before.
+  const datesFile = path('build/election-dates.json');
+  let dates = {};
+  try { dates = JSON.parse(readFileSync(datesFile, 'utf8')); } catch { /* first run */ }
+  const items = [...new Set(rows.map(b => val(b, 'e').split('/').pop()))].filter(q => !dates[q]);
+  for (let i = 0; i < items.length; i += 200) {
+    const batch = items.slice(i, i + 200);
+    try {
+      const got = await sparql(`
+        SELECT ?e ?time ?prec ?rank WHERE {
+          VALUES ?e { ${batch.map(q => `wd:${q}`).join(' ')} }
+          ?e p:P585 ?st . ?st wikibase:rank ?rank ; psv:P585 ?v . ?v wikibase:timeValue ?time ; wikibase:timePrecision ?prec .
+        }`);
+      for (const q of batch) dates[q] = [];
+      for (const b of got) {
+        const p = Number(val(b, 'prec'));
+        dates[val(b, 'e').split('/').pop()].push([day(val(b, 'time')), p >= 11 ? 'day' : p === 10 ? 'month' : 'year', val(b, 'rank').split('#').pop().replace(/Rank$/, '').toLowerCase()]);
+      }
+      writeFileSync(datesFile, JSON.stringify(dates));
+    } catch (err) { console.warn(`election dates ${i}: ${err.message}`); }
+  }
+  console.log(`election dates: ${Object.keys(dates).length} items, ${items.length} read today`);
   const qidToKey = {};
   for (const [key, c] of Object.entries(COUNTRIES)) for (const q of c.qids) (qidToKey[q] ||= []).push(key);
   const out = {};
@@ -255,11 +281,16 @@ async function elections() {
     const qid = val(b, 'country').split('/').pop();
     // US state contests (ballot measures, state legislatures) carry the US as country too.
     if (qid === 'Q30' && !/United States|presidential/i.test(label)) continue;
+    // Votes of a colony, a region, a city or a community that Wikidata files under the state that ruled or contained
+    // it, and items that are not public votes, are left out by state and item (election-corrections.mjs NOT_NATIONAL
+    // and NOT_VOTES, 25 November 2026); voteType reads plebiscites and Ireland's amendment votes as referendums.
+    const item = val(b, 'e').split('/').pop();
     for (const key of qidToKey[qid] || []) {
       const id = `${key}|${val(b, 'e')}`;
-      if (seen.has(id)) continue;
+      if (seen.has(id) || dropped(key, item)) continue;
       seen.add(id);
-      (out[key] ||= []).push({ date: day(val(b, 'date')), type: /referendum/i.test(label) ? 'referendum' : 'election', text: label, url: val(b, 'article') });
+      const when = pickDate(dates[item], label) ||{ date: day(val(b, 'date')), precision: 'day' };
+      (out[key] ||= []).push({ date: when.date, type: voteType(label), text: label, url: val(b, 'article'), ...(when.precision !== 'day' ? { precision: when.precision } : {}) });
     }
   }
   // Votes held on one day are listed by title, not in the order Wikidata happened to return them (the later sorts are
@@ -274,7 +305,11 @@ function leaderEvents(leaders) {
   for (const [key, list] of Object.entries(leaders)) {
     for (const l of list) {
       if (l.start < START) continue;
-      const who = l.full || l.name;
+      // A person whose Wikidata item has no English label arrives here named by the item ("Q5771800"); build-parties.mjs
+      // later names the leader by the article's title, so the arrival takes that title now (second reading, 25 November
+      // 2026: "Q5771800 takes power" for Claudia Sheinbaum, "Q20055561 takes power" for Rishi Sunak).
+      const title = decodeURIComponent((l.url || '').split('/wiki/')[1] || '').replace(/_/g, ' ').replace(/ \(.*\)$/, '');
+      const who = /^Q\d+$/.test(l.full || l.name) && title ? title : l.full || l.name;
       const how = l.entry === 'Irregular' ? ' (irregular seizure of power)' : l.entry === 'Foreign Imposition' ? ' (imposed by a foreign power)' : '';
       // A start Wikidata gives only to the year (Robert Abela, 2020) is an event of that year, shown as the year (D7).
       (out[key] ||= []).push({ date: l.start, type: l.entry === 'Irregular' ? 'coup' : 'leader', text: `${who} takes power${how}`, url: l.url, ...(l.startPrecision && l.startPrecision !== 'day' ? { precision: l.startPrecision } : {}) });
@@ -291,17 +326,37 @@ async function yearPages() {
     for (let y = FIRST_YEAR; y <= LAST_YEAR; y++) titles.push({ key, y, title: `${y} in ${place}` });
   }
   const exists = new Set();
+  // The years the file being replaced links, kept for a batch that fails or for a title Wikipedia's answer does not
+  // mention at all, so a bad answer on the day cannot drop links (second reading, 25 November 2026). A title Wikipedia
+  // reports as missing is dropped: on 25 November 2026 ten "<year> in the Soviet Union" pages (1960, 1967-69, 1972-74,
+  // 1983, 1984, 1987) were missing and left the list. Each year lost against that file is printed.
+  let prev = {};
+  try { prev = JSON.parse(readFileSync(path('data/countries.json'), 'utf8')).countries || {}; } catch { /* first run */ }
+  const had = t => (prev[t.key]?.yearPages || []).includes(t.y);
   for (let i = 0; i < titles.length; i += 50) {
     const batch = titles.slice(i, i + 50);
     const url = 'https://en.wikipedia.org/w/api.php?action=query&format=json&redirects=1&titles=' +
       encodeURIComponent(batch.map(t => t.title).join('|'));
-    const res = await fetch(url, { headers: { 'User-Agent': UA } }).then(r => r.json());
-    const ok = new Set(Object.values(res.query.pages).filter(p => !('missing' in p)).map(p => p.title));
-    for (const r of res.query.redirects || []) if (ok.has(r.to)) ok.add(r.from);
-    for (const t of batch) if (ok.has(t.title)) exists.add(`${t.key}|${t.y}`);
+    let res;
+    try { res = await fetch(url, { headers: { 'User-Agent': UA } }).then(r => r.json()); } catch (err) { console.warn(`year pages ${i}: ${err.message}`); }
+    if (!res?.query?.pages) { for (const t of batch) if (had(t)) exists.add(`${t.key}|${t.y}`); continue; }
+    const pages = Object.values(res.query.pages);
+    const ok = new Set(pages.filter(p => !('missing' in p) && !('invalid' in p)).map(p => p.title));
+    const answered = new Set(pages.map(p => p.title));
+    const norm = new Map((res.query.normalized || []).map(n => [n.from, n.to]));
+    for (const r of res.query.redirects || []) { answered.add(r.from); if (ok.has(r.to)) ok.add(r.from); }
+    for (const t of batch) {
+      const title = norm.get(t.title) || t.title;
+      if (ok.has(title) || ok.has(t.title)) exists.add(`${t.key}|${t.y}`);
+      else if (!answered.has(title) && !answered.has(t.title) && had(t)) exists.add(`${t.key}|${t.y}`);
+    }
   }
   const out = {};
   for (const t of titles) if (exists.has(`${t.key}|${t.y}`)) (out[t.key] ||= []).push(t.y);
+  for (const [key, c] of Object.entries(prev)) {
+    const lost = (c.yearPages || []).filter(y => !(out[key] || []).includes(y));
+    if (lost.length) console.log(`year pages: ${key} loses ${lost.join(', ')} (Wikipedia reports them missing)`);
+  }
   return out;
 }
 

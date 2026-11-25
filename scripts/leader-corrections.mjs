@@ -86,6 +86,13 @@ export const CORRECTIONS = {
   // Romania: President, as Archigos tracked from 2004 (acting presidents included, as in 2007 and 2012).
   Q218: {
     from: '2014-12-21',
+    // Archigos's "Vacariou" (review retrospective-1, 25 November 2026) is Nicolae Văcăroiu (Q126671): Prime Minister
+    // from 4 November 1992 (Archigos; Wikidata P39 Q15304810 from 4 November 1992; his English Wikipedia infobox gives
+    // 18 November 1992) to 12 December 1996, and acting President from 20 April to 23 May 2007 (his article's infobox).
+    edit: {
+      '1992-11-04': { name: 'Văcăroiu', full: 'Nicolae Văcăroiu', url: W('Nicolae Văcăroiu') },
+      '2007-04-20': { name: 'Văcăroiu', full: 'Nicolae Văcăroiu', url: W('Nicolae Văcăroiu') }
+    },
     leaders: [
       P('Klaus Iohannis', '2014-12-21', '2025-02-12'),
       P('Ilie Bolojan', '2025-02-12', '2025-05-26'),
@@ -114,7 +121,12 @@ export const CORRECTIONS = {
       '2015-01-01': { full: 'Simonetta Sommaruga', url: W('Simonetta Sommaruga'), end: '2015-12-31' },
       // Willy Spühler (1902-1990), President in 1963 and 1968, not the businessman Peter Spuhler (MI-10, 15 Nov).
       '1963-01-01': { name: 'Spühler', full: 'Willy Spühler', url: W('Willy Spühler') },
-      '1968-01-01': { name: 'Spühler', full: 'Willy Spühler', url: W('Willy Spühler') }
+      '1968-01-01': { name: 'Spühler', full: 'Willy Spühler', url: W('Willy Spühler') },
+      // Archigos's "Petipierre" (review retrospective-1, 25 November 2026): Max Petitpierre (Q664453), President of the
+      // Swiss Confederation in 1950, 1955 and 1960 (Wikidata P39; his English Wikipedia article).
+      '1950-01-01': { name: 'Petitpierre', full: 'Max Petitpierre', url: W('Max Petitpierre') },
+      '1955-01-01': { name: 'Petitpierre', full: 'Max Petitpierre', url: W('Max Petitpierre') },
+      '1960-01-01': { name: 'Petitpierre', full: 'Max Petitpierre', url: W('Max Petitpierre') }
     },
     leaders: [
       swiss(2016, 'Johann Schneider-Ammann'), swiss(2017, 'Doris Leuthard'), swiss(2018, 'Alain Berset'),
@@ -135,7 +147,10 @@ export const CORRECTIONS = {
       '2015-01-26': { end: '2019-07-08' },
       '1989-10-11': { name: 'Grivas', full: 'Ioannis Grivas', url: W('Ioannis Grivas') },
       '2004-03-10': { name: 'Karamanlis', full: 'Kostas Karamanlis', url: W('Kostas Karamanlis') },
-      '2009-10-06': { name: 'Papandreou', full: 'George Papandreou', url: W('George Papandreou') }
+      '2009-10-06': { name: 'Papandreou', full: 'George Papandreou', url: W('George Papandreou') },
+      // Archigos's "Ionannides" (review retrospective-1, 25 November 2026): Dimitrios Ioannidis (Q460912), whose English
+      // Wikipedia article calls him the junta's de facto leader for its last ten months, holding no formal office.
+      '1973-11-25': { name: 'Ioannidis', full: 'Dimitrios Ioannidis', url: W('Dimitrios Ioannidis') }
     },
     leaders: [
       P('Kyriakos Mitsotakis', '2019-07-08', '2023-05-25'),
@@ -144,8 +159,11 @@ export const CORRECTIONS = {
     ]
   },
   // Links that led to a disambiguation page (MI-10, 15 November 2026): the person's own article, checked that day.
-  Q786: { edit: { '1963-02-27': { url: W('Juan Bosch (politician)') } } },
-  Q211: { edit: { '2000-05-05': { url: W('Andris Bērziņš (prime minister)') } } },
+  // Archigos's "Berreras" of 7 May to 30 August 1965 is Antonio Imbert Barrera (Q602500; Wikidata P39 President of the
+  // Dominican Republic for those days; his article), added 25 November 2026 with the misspellings below.
+  Q786: { edit: { '1963-02-27': { url: W('Juan Bosch (politician)') }, '1965-05-07': { name: 'Imbert Barrera', full: 'Antonio Imbert Barrera', url: W('Antonio Imbert Barrera') } } },
+  // Archigos's "Juresevskis" is Pēteris Juraševskis (Q1390299; Wikidata P39 Prime Minister of Latvia, 1928; his article).
+  Q211: { edit: { '2000-05-05': { url: W('Andris Bērziņš (prime minister)') }, '1928-01-21': { name: 'Juraševskis', full: 'Pēteris Juraševskis', url: W('Pēteris Juraševskis') } } },
   Q20: { edit: { '1926-03-03': { url: W('Ivar Lykke (politician)') } } },
   Q189: { edit: { '1963-11-14': { url: W('Bjarni Benediktsson (born 1908)') } } },
   // Czechia's first Prime Minister, Archigos's "Klaus" of 1 January 1993, had been linked to Josef Klaus, Austria's
@@ -157,6 +175,89 @@ export const CORRECTIONS = {
   // describes as the first Czechoslovak president and whose "position held" (P39) statement runs from 14 November
   // 1918 to 14 December 1935; his English Wikipedia article is "Tomáš Masaryk". Archigos's own start date is kept.
   Q33946: { edit: { '1918-10-28': { full: 'Tomáš Masaryk', url: W('Tomáš Masaryk') } } },
+  // Archigos's short names that are misspelt (review retrospective-1, 25 November 2026). These leaders had no article
+  // and no Wikidata match, so the page showed Archigos's spelling. Each is named here by the person's English Wikipedia
+  // article, read on 25 November 2026 with the item it links to and that item's "position held" (P39) dates, which
+  // agree with Archigos's leader for the state and the dates. Archigos's dates are kept. Of the 152 leaders shown by
+  // Archigos's short name, the others were read too: they are spelt right, or in another common romanisation
+  // (Kondilis, Tsokhatzopulos, Sarkisyan, Burdzhanadze, Tuan Chi-jui), or as Wikidata labels the person ("Reyna
+  // Andrade"), and keep it.
+  // Belgium: Henri Jaspar (Q14994), Prime Minister from 20 May 1926 (Wikidata P39).
+  Q31: { edit: { '1926-05-20': { name: 'Jaspar', full: 'Henri Jaspar', url: W('Henri Jaspar') } } },
+  // Panama: Rodolfo Chiari (Q721719, President 1924-28); Juan Demóstenes Arosemena (Q708308; his article: President from
+  // 1 October 1936 to 16 December 1939); Domingo Díaz Arosemena (Q338952, President to 28 July 1949); Alcibíades
+  // Arosemena (Q887733; his article: President of Panama); Florencio Flores Aguilar (Q5460853; his article: the
+  // Panamanian army officer, who commanded the National Guard after Torrijos's death).
+  Q804: {
+    edit: {
+      '1924-10-01': { name: 'Chiari', full: 'Rodolfo Chiari', url: W('Rodolfo Chiari') },
+      '1936-10-01': { name: 'Arosemena', full: 'Juan Demóstenes Arosemena', url: W('Juan Demóstenes Arosemena') },
+      '1948-10-01': { name: 'Díaz Arosemena', full: 'Domingo Díaz Arosemena', url: W('Domingo Díaz Arosemena') },
+      '1951-05-10': { name: 'Arosemena', full: 'Alcibíades Arosemena', url: W('Alcibíades Arosemena') },
+      '1981-07-31': { name: 'Flores Aguilar', full: 'Florencio Flores Aguilar', url: W('Florencio Flores Aguilar') }
+    }
+  },
+  // Switzerland's Max Petitpierre is in Q39's entry above.
+  // Costa Rica: Luis Alberto Monge (Q879195, President 8 May 1982 to 8 May 1986); Otilio Ulate Blanco (Q145952,
+  // President from 1949).
+  Q800: {
+    edit: {
+      '1982-05-08': { name: 'Monge', full: 'Luis Alberto Monge', url: W('Luis Alberto Monge') },
+      '1949-11-08': { name: 'Ulate', full: 'Otilio Ulate Blanco', url: W('Otilio Ulate Blanco') }
+    }
+  },
+  // Yugoslavia: Mika Špiljak (Q718148). Archigos ends Petar Stambolić and starts "Spiljac" on 13 May 1983; Wikidata's
+  // "position held" (P39, President of the Presidency of Yugoslavia) ends Stambolić's term and starts Špiljak's on
+  // 15 May 1983, and Špiljak's English Wikipedia infobox gives 15 May 1983 to 15 May 1984 (review retrospective-3).
+  // Špiljak takes Wikidata's name and dates, with Archigos's kept in `archigos`, as wikidata-leaders.mjs records a
+  // match. Raif Dizdarević (Q1282352, President of the Presidency from 15 May 1988, Wikidata P39) is Archigos's
+  // "Dizarevic".
+  Q191077: {
+    edit: {
+      '1982-05-16': { end: '1983-05-15' },
+      '1983-05-13': {
+        name: 'Špiljak', full: 'Mika Špiljak', url: W('Mika Špiljak'), start: '1983-05-15', end: '1984-05-15',
+        startPrecision: 'day', endPrecision: 'day', position: 'President of the Presidency of Yugoslavia', positionItem: 'Q16761225',
+        qid: 'Q718148', source: 'Wikidata', archigos: { start: '1983-05-13', end: '1984-05-15', full: null }
+      },
+      '1988-05-15': { name: 'Dizdarević', full: 'Raif Dizdarević', url: W('Raif Dizdarević') }
+    }
+  },
+  // El Salvador: Pío Romero Bosque (Q887275, President 1927-31), Arturo Araujo (Q715109, President 1 March to
+  // 2 December 1931), Álvaro Magaña (Q250808, President 1982-84), each from Wikidata P39.
+  Q792: {
+    edit: {
+      '1927-03-01': { name: 'Romero Bosque', full: 'Pío Romero Bosque', url: W('Pío Romero Bosque') },
+      '1931-03-01': { name: 'Araujo', full: 'Arturo Araujo', url: W('Arturo Araujo') },
+      '1982-05-02': { name: 'Magaña', full: 'Álvaro Magaña', url: W('Álvaro Magaña') }
+    }
+  },
+  // Spain: Juan Bautista Aznar-Cabañas (Q673586), Manuel Azaña (Q203708; his article: Manuel Azaña Díaz, not "Diez"),
+  // Diego Martínez Barrio (Q518982) and José Giral (Q518956; his article: José Giral y Pereira), each President of the
+  // Council of Ministers on the dates Archigos gives (Wikidata P39). Martínez Barrio and Giral both start on
+  // 19 July 1936, so Giral's key names Archigos's spelling.
+  Q29: {
+    edit: {
+      '1931-02-18': { name: 'Aznar-Cabañas', full: 'Juan Bautista Aznar-Cabañas', url: W('Juan Bautista Aznar-Cabañas') },
+      '1931-10-14': { name: 'Azaña', full: 'Manuel Azaña', url: W('Manuel Azaña') },
+      '1933-10-09': { name: 'Martínez Barrio', full: 'Diego Martínez Barrio', url: W('Diego Martínez Barrio') },
+      // Archigos's "Ibanez" of 28 April 1934 had been linked to Carlos Ibáñez del Campo, President of Chile (found on
+      // 25 November 2026 while checking these names): he is Ricardo Samper Ibáñez (Q728514), President of the Council of
+      // Ministers from 28 April to 4 October 1934 (Wikidata P39); his English Wikipedia article is "Ricardo Samper".
+      '1934-04-28': { name: 'Samper', full: 'Ricardo Samper', url: W('Ricardo Samper') },
+      '1936-02-19': { name: 'Azaña', full: 'Manuel Azaña', url: W('Manuel Azaña') },
+      '1936-07-19|Martinez Barro': { name: 'Martínez Barrio', full: 'Diego Martínez Barrio', url: W('Diego Martínez Barrio') },
+      '1936-07-19|Giral y Pereyra': { name: 'Giral', full: 'José Giral', url: W('José Giral') }
+    }
+  },
+  // Nicaragua: René Schick (Q182848, President 1963-66). Honduras: Miguel Paz Barahona (Q881094, President 1925-29).
+  // Bulgaria: Simeon Sakskoburggotski (Q1060355), Prime Minister 2001-05 (Wikidata P39). His English Wikipedia article
+  // is "Simeon II", and its lead says he "served as prime minister of the Republic of Bulgaria as Simeon
+  // Sakskoburggotski (2001–2005)", so the page names him so and links the article. wikidata-leaders.mjs keeps this
+  // `full` when it gives him Wikidata's dates (until the second reading of 25 November 2026 it put back "Simeon II").
+  Q811: { edit: { '1963-05-01': { name: 'Schick', full: 'René Schick', url: W('René Schick') } } },
+  Q783: { edit: { '1925-02-01': { name: 'Paz Barahona', full: 'Miguel Paz Barahona', url: W('Miguel Paz Barahona') } } },
+  Q219: { edit: { '2001-07-24': { name: 'Sakskoburggotski', full: 'Simeon Sakskoburggotski', url: W('Simeon II') } } },
   // RT-04: whole lists, each starting with its first entry.
   ...Object.fromEntries(Object.entries(LISTS).map(([key, l]) => [key, { from: l.leaders[0].start, leaders: l.leaders, offices: l.offices }]))
 };
@@ -167,14 +268,30 @@ const titleOf = url => decodeURIComponent((url || '').split('/wiki/')[1] || '').
 const how = l => (l.entry === 'Irregular' ? ' (irregular seizure of power)' : l.entry === 'Foreign Imposition' ? ' (imposed by a foreign power)' : '');
 const arrival = l => ({ date: l.start, type: l.entry === 'Irregular' ? 'coup' : 'leader', text: `${l.full || l.name} takes power${how(l)}`, url: l.url });
 
-// Renames the arrival event of a leader whose name or article changed: same day, and the old article or old name.
+// Renames the arrival event of a leader whose name or article changed: the old day, and the old article or old name.
+// An edit that changes the start moves the event to the new day (review retrospective-3, 25 November 2026: until then
+// "Spiljac takes power" stayed on 13 May 1983 when the start moved).
 function renameArrival(c, l, old) {
   for (const e of c.events || []) {
-    if (!['leader', 'coup'].includes(e.type) || e.date !== l.start) continue;
-    if (e.url !== old.url && !e.text.startsWith(`${old.full || old.name} takes power`)) continue;
+    if (!['leader', 'coup'].includes(e.type) || e.date !== (old.start || l.start)) continue;
+    // By the old link where there was one, else by the old name: two leaders without a link took office on 19 July
+    // 1936 in Spain, and matching a missing link to a missing link renamed both arrivals (25 November 2026).
+    if (!(old.url && e.url === old.url) && !e.text.startsWith(`${old.full || old.name} takes power`)) continue;
     e.text = `${l.full || l.name} takes power` + e.text.replace(/^.* takes power/, '');
     e.url = l.url;
+    e.date = l.start;
   }
+}
+
+// The leader an `edit` names: by Archigos's start (its key), or by the start the edit gives it once a run has moved it,
+// or by Archigos's start kept in `archigos` where wikidata-leaders.mjs has since given the leader Wikidata's dates; so a
+// second run finds the same leader (until 25 November 2026 an edit of `start` threw on the second run). A key may add
+// Archigos's short name after a bar ("1936-07-19|Giral y Pereyra") where two leaders took office on one day; the name
+// the edit gives is accepted too.
+function edited(leaders, key, fields) {
+  const [start, name] = key.split('|');
+  return leaders.find(x => (x.start === start || x.archigos?.start === start || (fields.start && x.start === fields.start))
+    && (!name || x.name === name || x.name === fields.name));
 }
 
 // Applies the corrections to one country record { leaders, events, offices } in place; `key` is its Wikidata item
@@ -191,9 +308,9 @@ export function correctCountry(key, c) {
   if (!fix) return c;
   const leaders = c.leaders || [];
   for (const [start, fields] of Object.entries(fix.edit || {})) {
-    const l = leaders.find(x => x.start === start);
+    const l = edited(leaders, start, fields);
     if (!l) throw new Error(`leader-corrections: ${key} has no leader starting ${start}`);
-    const old = { full: l.full, name: l.name, url: l.url };
+    const old = { full: l.full, name: l.name, url: l.url, start: l.start };
     Object.assign(l, fields);
     renameArrival(c, l, old);
   }

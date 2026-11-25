@@ -87,10 +87,32 @@ function officesIn(key, a, b, leaders) {
     .filter(o => { const k = `${o.office}|${o.url || o.full}`; if (once.has(k)) return false; once.add(k); return true; });
 }
 const eventsAll = (key, a, b = a) => (country(key)?.events || []).filter(e => e.date >= `${a}-01-01` && e.date <= `${b}-12-31`);
+// An event dated after today has not happened yet (review front-pages-3, 25 November 2026): the data keeps the votes
+// Wikidata schedules (Spain's general election of 29 November 2026), because the Historical Calendar and the lake and
+// National Analysis refreshes read them, so the page holds them back on the day it is read. They are listed apart,
+// marked "scheduled", and left out of the counts, the colours, the overview and the table. "Today" here is the date in
+// the reader's own time zone (second reading, 25 November 2026: TODAY is the date in UTC, so west of Greenwich a vote
+// showed as held on the evening before its day, and east of it as still to come on the morning of it). TODAY itself
+// stays the UTC date for dateFor and the captions.
+const LOCAL_TODAY = (d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`)(new Date());
+const scheduled = e => e.date > LOCAL_TODAY;
 function eventsIn(key, a, b = a) {
-  return eventsAll(key, a, b).filter(e => eventInside(key, e));
+  return eventsAll(key, a, b).filter(e => eventInside(key, e) && !scheduled(e));
 }
-const eventsOutside = (key, a, b = a) => eventsAll(key, a, b).filter(e => !eventInside(key, e));
+const scheduledIn = (key, a, b = a) => eventsAll(key, a, b).filter(e => eventInside(key, e) && scheduled(e));
+const eventsOutside = (key, a, b = a) => eventsAll(key, a, b).filter(e => !eventInside(key, e) && !scheduled(e));
+// How leaders took office comes from Archigos 4.1, which ends in 2015 (data.sources.leaders: "entry, exit and exitHow:
+// Archigos 4.1, to 2015"). All 216 leaders who took office after 2015 (data of 25 November 2026) carry no entry, so for the states Archigos covers
+// no irregular seizure of power can be counted or coloured after 2015, and a 0 there would be read as none happening
+// (review retrospective-8, 25 November 2026). VM's own lists for Montenegro and the ten microstates
+// (scripts/leader-lists.mjs) give the entry wherever a source says it, in any year.
+const ENTRY_TO = 2015;
+function entryNote(a, b = a) {
+  if (b <= ENTRY_TO) return '';
+  const why = `how leaders took office comes from Archigos 4.1, which ends in ${ENTRY_TO}, so for the states it covers no irregular seizure of power is counted or coloured after ${ENTRY_TO} (VM’s own lists for Montenegro and the ten microstates give one wherever a source records it)`;
+  return a > ENTRY_TO ? `Irregular seizures of power are not recorded after ${ENTRY_TO}: ${why}.`
+    : `The count of irregular seizures of power runs only to ${ENTRY_TO}: ${why}.`;
+}
 // The years after the first of those shown in which this state's border in Cliopatria differs from the year before's
 // (its border events, by the year): the frames of the border animation.
 function borderChanges(key, a, b = a) {
@@ -124,7 +146,7 @@ const fmt = (d, precision = 'day') => {
 const term = p => `${fmt(p.start, p.startPrecision)} – ${fmt(p.end, p.endPrecision)}`;
 // A dated event at the precision its source gives: a year-only date as the year, a month as "Aug 1991". Wikidata often
 // records only the year of an election, and Cliopatria's borders are by the year.
-const whenOf = e => (e.precision === 'year' || (/^(election|referendum)$/.test(e.type) && e.date.endsWith('-01-01')) ? e.date.slice(0, 4)
+const whenOf = e => (e.precision === 'year' || (!e.precision && /^(election|referendum)$/.test(e.type) && e.date.endsWith('-01-01')) ? e.date.slice(0, 4)
   : e.precision === 'month' ? new Date(`${e.date.slice(0, 7)}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' }) : fmt(e.date));
 // Party memberships (from Wikidata) that applied during the years shown; undated memberships always apply. With a
 // state's key, only those that applied on a day of its statehood in those years: what is said of the state (its
@@ -285,18 +307,27 @@ function renderPanel() {
       // (second review, X5).
       .sort((p, q) => p.date.localeCompare(q.date) || (q.type === 'statehood') - (p.type === 'statehood'));
     const count = (...types) => all.filter(e => types.includes(e.type)).length;
+    // Votes dated after today, listed after the year's events and marked "scheduled"; never counted (front-pages-3).
+    const ahead = Object.entries(state.data.countries).flatMap(([key, c]) => scheduledIn(key, a, y).map(e => ({ ...e, key, cname: c.name })))
+      .sort((p, q) => p.date.localeCompare(q.date));
+    const shown = [...all, ...ahead];
+    // Irregular seizures after 2015 are not recorded for the states Archigos covers (retrospective-8): a period after
+    // 2015 says so in place of a 0, and one that crosses 2015 says its count runs only to 2015.
+    const coups = count('coup'), after = a > ENTRY_TO, crosses = !after && y > ENTRY_TO;
     panel.innerHTML = `<h2>${when}</h2>
       <p class="sub">${esc(coverageNote(y))}</p>
       <div class="prp-kpis">
         <div class="prp-kpi"><span>Leader changes</span><b>${count('leader', 'coup')}</b></div>
-        <div class="prp-kpi"><span>Irregular seizures</span><b>${count('coup')}</b></div>
+        <div class="prp-kpi" id="kpi-irregular"><span>Irregular seizures${crosses ? `, to ${ENTRY_TO}` : ''}</span>${after && !coups ? `<b style="font-size:var(--prp-fs-sm)">Not recorded after ${ENTRY_TO}</b>` : `<b>${coups}</b>`}</div>
         <div class="prp-kpi"><span>Elections, referendums</span><b>${count('election', 'referendum')}</b></div>
         <div class="prp-kpi"><span>Borders that differ in Cliopatria</span><b>${count('border')}</b></div>
         <div class="prp-kpi"><span>Independence, union or end</span><b>${count('statehood')}</b></div>
       </div>
+      ${entryNote(a, y) ? `<p class="note" id="entry-note">${esc(entryNote(a, y))}</p>` : ''}
       <p class="note">${one ? 'Select a country to see who was in charge and its key events. Drag the slider or press ▶ to move through the years; drag its hollow start handle back to cover a period of years.' : `Everything recorded from ${a} to ${y}. Select a country to see who was in charge and its key events; bring the hollow start handle back onto the end for a single year.`}</p>
-      <h3>Key events ${one ? `in ${y}` : when}${all.length > 120 ? ` · the first 120 of ${all.length}` : ''}</h3>
-      ${all.length ? `<ul class="events">${all.slice(0, 120).map(e => eventItem(e, e.cname, e.key)).join('')}</ul>` : '<p class="empty">No recorded events.</p>'}`;
+      <h3>Key events ${one ? `in ${y}` : when}${shown.length > 120 ? ` · the first 120 of ${shown.length}` : ''}</h3>
+      ${shown.length ? `<ul class="events">${shown.slice(0, 120).map(e => eventItem(e, e.cname, e.key)).join('')}</ul>` : '<p class="empty">No recorded events.</p>'}
+      ${ahead.length ? `<p class="note">${scheduledNote(ahead.length)}</p>` : ''}`;
     panel.querySelectorAll('[data-open]').forEach(a => a.onclick = ev => { ev.preventDefault(); select(a.dataset.open); });
     return;
   }
@@ -307,6 +338,7 @@ function renderPanel() {
   const leaders = leadersIn(key, a, y);
   const offices = officesIn(key, a, y, leaders);
   const events = eventsIn(key, a, y);
+  const ahead = scheduledIn(key, a, y); // dated after today: listed, marked "scheduled", never counted (front-pages-3)
   // What VM's lists hold for the state at times in these years when it was not an independent state (D3, R1).
   const outside = { leaders: leadersOutside(key, a, y), events: eventsOutside(key, a, y) };
   const existed = coversYears(key, a, y);
@@ -337,8 +369,9 @@ function renderPanel() {
         <div class="who"><a href="${esc(o.url || wiki(o.full))}" target="_blank" rel="noopener">${esc(o.full)}</a><span class="tag office">${o.office === 'hos' ? 'Head of state' : 'Head of government'}</span></div>
         <div class="meta">${term(o)}</div>
         ${partyChips(o, a, y) ? `<div class="parties">${partyChips(o, a, y)}</div>` : ''}</div>`).join('')}` : ''}
-    ${existed || events.length ? `<h3>Key events ${one ? `in ${y}` : when}</h3>
-    ${events.length ? `<ul class="events">${events.map(e => eventItem(e)).join('')}</ul>` : `<p class="empty">No recorded events ${one ? 'this year' : 'in these years'}.</p>`}` : ''}
+    ${existed || events.length || ahead.length ? `<h3>Key events ${one ? `in ${y}` : when}</h3>
+    ${events.length || ahead.length ? `<ul class="events">${[...events, ...ahead].map(e => eventItem(e)).join('')}</ul>` : `<p class="empty">No recorded events ${one ? 'this year' : 'in these years'}.</p>`}
+    ${ahead.length ? `<p class="note">${scheduledNote(ahead.length)}</p>` : ''}` : ''}
     ${outside.leaders.length || outside.events.length ? `<div class="outside">
       <h3>While not an independent state</h3>
       <p class="note">VM’s lists hold these for ${esc(name)} at times ${one ? `in ${y}` : `from ${a} to ${y}`} when it was not an independent state. They are not counted in the year’s figures.</p>
@@ -442,8 +475,10 @@ function eventItem(e, cname, key) {
   const on = e.type === 'statehood' && e.kind !== 'independence' ? dayBefore(e.date) : e.date;
   const label = cname ? `<a href="#" data-open="${esc(key)}">${esc(displayName(key, cname, on))}</a>: ` : '';
   const text = e.url ? `<a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.text)}</a>` : esc(e.text);
-  return `<li data-type="${e.type}"><time>${whenOf(e)}<span class="kind">${KIND[e.type] || e.type}</span></time>${label}${text}</li>`;
+  const ahead = scheduled(e); // dated after today (front-pages-3)
+  return `<li data-type="${e.type}"${ahead ? ' data-scheduled=""' : ''}><time>${whenOf(e)}<span class="kind">${ahead ? 'scheduled ' : ''}${KIND[e.type] || e.type}</span></time>${label}${text}</li>`;
 }
+const scheduledNote = n => `${n === 1 ? 'The one marked “scheduled” is' : `The ${n} marked “scheduled” are`} dated after today and ${n === 1 ? 'has' : 'have'} not taken place yet, so ${n === 1 ? 'it is' : 'they are'} not counted.`;
 
 /* ---------------------------------------------------------------- border animation: the period's, year by year */
 async function animateYears(key, a, y, changes) {
@@ -571,7 +606,7 @@ function renderTable() {
       <td>${r.leaders.length ? coLeaders(r.leaders).map(g => esc(andList(g.map(l => l.full || l.name)))).join(' → ') : '<span class="cell-sub">No leader recorded</span>'}</td>
       <td><span class="cell-status"><span class="swatch" style="background:${FILL[r.status]}"></span>${STATUS_LABEL[r.status]}</span></td>
       <td class="num">${r.events}</td></tr>`).join('');
-  $('#table-caption').textContent = `${coverageNote(y)} For each of the ${rows.length} on the map: who was in charge during ${span(a, y)}, what happened, and how many key events were recorded. Select a column heading to sort, or a row to open the state.`;
+  $('#table-caption').textContent = `${coverageNote(y)} For each of the ${rows.length} on the map: who was in charge during ${span(a, y)}, what happened, and how many key events were recorded. Select a column heading to sort, or a row to open the state.${entryNote(a, y) ? ` ${entryNote(a, y)}` : ''}`;
 }
 
 function markTableRow() {
@@ -634,7 +669,7 @@ function setupTabs() {
 function renderCaption() {
   const a = state.from, y = state.year;
   $('#caption').textContent = `States and borders ${dateFor(y) === TODAY ? 'today' : `in ${y}`}, each covered state coloured by what happened to it in ${a === y ? y : `the years ${a}–${y}`}. ` +
-    `Borders: Cliopatria v0.2.1, one border a year; statehood: Wikidata; leaders: Wikidata and Archigos 4.1.${y > state.data.bordersTo ? heldNote() : ''}`;
+    `Borders: Cliopatria v0.2.1, one border a year; statehood: Wikidata; leaders: Wikidata and Archigos 4.1.${y > state.data.bordersTo ? heldNote() : ''}${entryNote(a, y) ? ` ${entryNote(a, y)}` : ''}`;
   $('#legend-title').textContent = a === y ? 'This year' : 'In the period';
 }
 

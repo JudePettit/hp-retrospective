@@ -225,9 +225,15 @@ export function match(countries, { items, persons, offices, label }) {
     // A leader hand-corrected in leader-corrections.mjs is found there by Archigos's start. One whose correction gives
     // only the person (name, full, url) may take Wikidata's dates if its start stays the same (R2: Václav Klaus); any
     // other is left as it is.
+    // An edit's key is Archigos's start, or the start and Archigos's name after a bar ("1936-07-19|Giral y Pereyra").
+    // A person-only edit that gives `full` keeps that name after the match, so the page names the leader as the edit
+    // does and not by the article's title (second reading, 25 November 2026: Bulgaria's Prime Minister of 2001-05 is
+    // "Simeon Sakskoburggotski", the name he served under, though his article is "Simeon II").
     const edits = CORRECTIONS[key]?.edit || {};
-    const edited = new Set(Object.keys(edits).filter(s => Object.keys(edits[s]).some(f => !['name', 'full', 'url'].includes(f))));
-    const personOnly = new Set(Object.keys(edits).filter(s => !edited.has(s)));
+    const startOf = k => k.split('|')[0];
+    const edited = new Set(Object.keys(edits).filter(s => Object.keys(edits[s]).some(f => !['name', 'full', 'url'].includes(f))).map(startOf));
+    const personOnly = new Set(Object.keys(edits).map(startOf).filter(s => !edited.has(s)));
+    const editFull = l => Object.entries(edits).find(([k, f]) => startOf(k) === l.start && (!k.includes('|') || f.name === l.name))?.[1].full;
     const allowed = offices[key] || new Set();
     const list = c.leaders || [];
     const orig = list.map(l => ({ start: l.start, end: l.end }));
@@ -264,7 +270,7 @@ export function match(countries, { items, persons, offices, label }) {
       if (Math.abs(de) > WINDOW) return gap(`Wikidata’s end (${run.end.date}) is ${Math.abs(de)} days from Archigos’s`);
       if ((l.start < FIRST) !== (run.start.date < FIRST)) return gap('the start would move across 1 January 1926');
       if (!p.label || !/\p{L}/u.test(p.label)) return gap(`${item} has no English label`);
-      proposed.set(i, { row, take: { key, l, old: { start: l.start, end: l.end, full: l.full }, now: { start: run.start.date, end: run.end?.date || null }, item, label: shown, office: run.last, officeLabel: officeLabel(run.last), positions }, m: Math.max(Math.abs(ds), Math.abs(de)) });
+      proposed.set(i, { row, take: { key, l, old: { start: l.start, end: l.end, full: l.full }, now: { start: run.start.date, end: run.end?.date || null }, item, label: (personOnly.has(l.start) && editFull(l)) || shown, office: run.last, officeLabel: officeLabel(run.last), positions }, m: Math.max(Math.abs(ds), Math.abs(de)) });
     });
     // The list stays in order, and no gap or overlap over a day opens between neighbours that was not there: each pair
     // of neighbours is checked with the dates each would have, and where a pair fails, the proposal whose dropping

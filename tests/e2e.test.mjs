@@ -315,11 +315,15 @@ test('leader names are their articles\' names, not doubtful labels, with one spe
   for (const bad of ['Adolph Bowler', 'Isaac Shamir', 'Cárdenas segundo']) assert.ok(!all.includes(bad), bad);
   const title = url => decodeURIComponent(url.split('/wiki/')[1]).replace(/_/g, ' ').replace(/ \(.*\)$/, '');
   const problems = [];
-  for (const c of Object.values(data.countries)) {
+  // A name that leader-corrections.mjs gives by hand, with its source, is kept (second reading, 25 November 2026:
+  // Simeon Sakskoburggotski, the name he served under, whose article is "Simeon II").
+  const { CORRECTIONS } = await import('../scripts/leader-corrections.mjs');
+  const named = (key, l) => Object.values(CORRECTIONS[key]?.edit || {}).some(f => f.full && f.full === l.full && f.url === l.url);
+  for (const [key, c] of Object.entries(data.countries)) {
     const byUrl = new Map();
     for (const l of c.leaders) if (l.url) byUrl.set(l.url, [...(byUrl.get(l.url) || []), l.full]);
     for (const [url, names] of byUrl) if (new Set(names).size > 1) problems.push(`${c.name}: ${[...new Set(names)].join(' / ')} (${url})`);
-    for (const l of c.leaders.filter(l => l.archigos)) if (l.full !== title(l.url)) problems.push(`${c.name}: ${l.full} is not its article's title, ${title(l.url)}`);
+    for (const l of c.leaders.filter(l => l.archigos)) if (l.full !== title(l.url) && !named(key, l)) problems.push(`${c.name}: ${l.full} is not its article's title, ${title(l.url)}`);
   }
   assert.deepEqual(problems, []);
   assert.ok(data.countries.Q211.events.some(e => e.text === 'Ādolfs Bļodnieks takes power'));
@@ -1203,10 +1207,11 @@ test('the footer says which election dates are corrected, from each election\'s 
   const { ELECTIONS } = await import('../scripts/election-corrections.mjs');
   await open('');
   const line = (await page.textContent('#election-corrections')).replace(/\s+/g, ' ').trim();
-  const words = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'];
+  const words = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen', 'Twenty'];
   // "This site's copy of Wikidata", not "Wikidata": Grenada 2026 was wrong only in the build's cached fetch (Wikidata
   // itself now gives 5 November 2026), and Grenada 1967 and 2003 have Wikidata's right date under a wrong country.
-  assert.ok(line.startsWith(`${words[ELECTIONS.length]} elections are corrected where this site’s copy of Wikidata had the wrong date or country`), line);
+  // "Votes" since 25 November 2026, when three independence referendums joined the list.
+  assert.ok(line.startsWith(`${words[ELECTIONS.length]} votes are corrected where this site’s copy of Wikidata had the wrong date or country`), line);
   assert.ok(!/Wikidata dates wrongly|checked against a second source/.test(line), `claims no more than the list holds: ${line}`);
   const data = JSON.parse(readFileSync(new URL('../data/countries.json', import.meta.url), 'utf8'));
   const byState = new Map();
@@ -1216,4 +1221,201 @@ test('the footer says which election dates are corrected, from each election\'s 
   assert.match(line, /each takes its date and country from its English Wikipedia article/);
   assert.match(line, /listed, with their sources, in scripts\/election-corrections\.mjs/);
   assert.ok(!/'/.test(line), 'the typographic apostrophe');
+});
+
+// Review of 24-25 November 2026, build 1 (retrospective data: leaders, votes and state names).
+const retro = () => json('data/countries.json').countries;
+const leaderNames = c => (c.leaders || []).map(l => `${l.name}|${l.full || ''}`);
+
+// retrospective-2: Archigos 4.1 says it is Stata release 118 (UTF-8) but stores Latin-1 bytes, which were read as
+// U+FFFD; read-dta.mjs now reads them as Latin-1 where they are not valid UTF-8.
+test('no leader\'s name holds a replacement character: Niinistö, Löfven, Løkke Rasmussen and Hernández read right (retrospective-2)', async () => {
+  const { text } = await import('../scripts/read-dta.mjs');
+  assert.equal(text(Buffer.from([0x4e, 0x69, 0x69, 0x6e, 0x69, 0x73, 0x74, 0xf6])), 'Niinistö', 'Latin-1 bytes');
+  assert.equal(text(Buffer.from('Løkke', 'utf8')), 'Løkke', 'UTF-8 bytes');
+  const countries = retro();
+  assert.doesNotMatch(JSON.stringify(countries), /�/);
+  const names = Object.values(countries).flatMap(leaderNames).join('\n');
+  for (const n of ['Niinistö', 'Löfven', 'Løkke Rasmussen', 'Hernández', 'Saca González']) assert.ok(names.includes(n), n);
+});
+
+// retrospective-1: five names Archigos misspells, put right in leader-corrections.mjs from Wikidata and the leaders'
+// English Wikipedia articles.
+test('misspelt leaders\' names are put right: Henri Jaspar, Rodolfo Chiari, Max Petitpierre, Luis Alberto Monge, Mika Špiljak (retrospective-1)', () => {
+  const countries = retro();
+  const all = Object.values(countries).flatMap(leaderNames).join('\n');
+  for (const wrong of ['Jasper', 'Rudolfo', 'Petipierre', 'Alverez', 'Spiljac']) assert.ok(!all.includes(wrong), wrong);
+  const has = (key, start, full) => assert.ok(countries[key].leaders.some(l => (l.start === start || l.archigos?.start === start) && l.full === full), `${key} ${start} ${full}`);
+  has('Q31', '1926-05-20', 'Henri Jaspar');
+  has('Q804', '1924-10-01', 'Rodolfo Chiari');
+  for (const y of ['1950', '1955', '1960']) has('Q39', `${y}-01-01`, 'Max Petitpierre');
+  has('Q800', '1982-05-08', 'Luis Alberto Monge');
+  has('Q191077', '1983-05-15', 'Mika Špiljak');
+  // Two Spanish leaders took office on 19 July 1936; each keeps his own arrival.
+  const spain = countries.Q29.events.filter(e => e.date === '1936-07-19' && e.type === 'leader').map(e => e.text).sort();
+  assert.deepEqual(spain, ['Diego Martínez Barrio takes power', 'José Giral takes power']);
+});
+
+// retrospective-3: Stambolić handed over to Špiljak on 15 May 1983 (Archigos: 13 May); the arrival event moves with
+// the start, and the corrections give the same data when run again.
+test('Stambolić leaves and Špiljak arrives on 15 May 1983, and running the corrections again changes nothing (retrospective-3)', async () => {
+  const check = (c, label) => {
+    const stambolic = c.leaders.find(l => /Stamboli/.test(l.name) && l.start.startsWith('1982'));
+    const spiljak = c.leaders.find(l => l.full === 'Mika Špiljak');
+    assert.equal(stambolic?.end, '1983-05-15', `${label}: Stambolić's end`);
+    assert.equal(spiljak?.start, '1983-05-15', `${label}: Špiljak's start`);
+    assert.ok(c.events.some(e => e.date === '1983-05-15' && /Špiljak takes power/.test(e.text)), `${label}: arrival on 15 May`);
+    assert.ok(!c.events.some(e => e.date === '1983-05-13' && /Špiljak|Spiljac/.test(e.text)), `${label}: no arrival on 13 May`);
+  };
+  const countries = retro();
+  check(countries.Q191077, 'data');
+  const { applyCorrections } = await import('../scripts/leader-corrections.mjs');
+  const once = applyCorrections(structuredClone(countries));
+  const twice = applyCorrections(structuredClone(once));
+  check(once.Q191077, 'first run');
+  assert.deepEqual(twice, once, 'a second run is safe');
+});
+
+// retrospective-5 and front-pages-2: votes of colonies, regions, cities and communities, and items that are not public
+// votes, are left out by state and Wikidata item; the national votes a rule on "applies to" or a second country would
+// have caught stay.
+test('colonial, regional and local votes are not listed as the ruling state\'s, and the national ones stay (retrospective-5)', async () => {
+  const { NOT_NATIONAL, NOT_VOTES } = await import('../scripts/election-corrections.mjs');
+  const countries = retro();
+  const titles = key => new Set((countries[key]?.events || []).filter(e => /election|referendum/.test(e.type)).map(e => e.text));
+  for (const [key, , title] of [...NOT_NATIONAL, ...NOT_VOTES]) assert.ok(!titles(key).has(title), `${key}: ${title}`);
+  assert.ok(NOT_NATIONAL.length > 100, 'the list');
+  for (const [key, title] of [
+    ['Q145', '1955 Jamaican general election'], ['Q142', '1962 Algerian independence referendum'], ['Q30', '2006 Navajo Nation presidential election'],
+    ['Q15180', '1990 Lithuanian Supreme Soviet election'], ['Q191077', '2006 Montenegrin independence referendum'], ['Q17', '2019 Okinawan referendum']
+  ]) assert.ok(!titles(key).has(title), `${key}: ${title}`);
+  const keep = [
+    ['Q35', '1939 Danish constitutional referendum'], ['Q35', '1939 Danish Folketing election'],
+    ['Q35', '1972 Danish European Communities membership referendum'], ['Q229', '2004 Cypriot Annan Plan referendums'],
+    ['Q142', '1962 French Évian Accords referendum'], ['Q41304', '1938 German parliamentary election and referendum'],
+    // Second reading, 25 November 2026: three independence referendums Wikidata files under the Soviet Union or the SFR
+    // Yugoslavia, held inside their own states' statehood on this site, are listed under those states.
+    ['Q37', '1991 Lithuanian independence referendum'], ['Q212', '1991 Ukrainian independence referendum'],
+    ['Q221', '1991 Macedonian independence referendum']
+  ];
+  for (const [key, title] of keep) assert.ok(titles(key).has(title), `${key} keeps ${title}`);
+  for (const title of ['1991 Lithuanian independence referendum', '1991 Ukrainian independence referendum', '1991 Macedonian independence referendum']) {
+    const holders = Object.entries(countries).filter(([, c]) => (c.events || []).some(e => e.text === title)).map(([k]) => k);
+    assert.equal(holders.length, 1, `${title} is listed once: ${holders}`);
+  }
+  // Votes that were planned and never held (the European Constitution referendums of 2005-06 that were called off,
+  // Greece 2011, Honduras 2009, Romania 2015) are gone, by the NOT_VOTES loop above; one by name for the record.
+  assert.ok(!titles('Q145').has('United Kingdom European Constitution referendum'), 'the UK vote that was never held');
+  assert.ok(titles('Q29').has('2005 Spanish European Constitution referendum'), 'the Spanish vote that was held stays');
+  assert.ok([...titles('Q35')].filter(t => /Danish (general|Folketing) election/.test(t)).length > 20, 'the Danish general elections stay');
+});
+
+// retrospective-4: Ireland's constitutional referendums are titled by the amendment, and plebiscites by that word; the
+// US vice presidential confirmations of 1973 and 1974 were votes of Congress, not of the electorate.
+test('Ireland\'s amendment votes and the plebiscites are referendums, and the vice presidential confirmations are gone (retrospective-4)', async () => {
+  const { voteType } = await import('../scripts/election-corrections.mjs');
+  const countries = retro();
+  const irish = countries.Q27.events.filter(e => /Amendment of the Constitution|Adoption of the Constitution/.test(e.text));
+  assert.ok(irish.length >= 40, `${irish.length} Irish votes`);
+  for (const e of irish) assert.equal(e.type, 'referendum', e.text);
+  assert.equal(countries.Q16.events.find(e => e.text === '1942 Canadian conscription plebiscite')?.type, 'referendum');
+  assert.equal(voteType('1969 Norwegian parliamentary election'), 'election');
+  // Armenia's referendum of 5 April 2020 was postponed on 16 March 2020 and never held; the parliament adopted the
+  // amendment on 22 June 2020 (second reading, 25 November 2026), so it is no vote at all.
+  assert.ok(!countries.Q399.events.some(e => e.text === '2020 Armenian constitutional amendment'), 'no Armenian vote in 2020');
+  assert.equal(voteType('2020 Armenian constitutional amendment'), 'election', 'not read as a referendum by its title');
+  assert.ok(!countries.Q30.events.some(e => /vice presidential confirmation/.test(e.text)), 'no confirmation by Congress');
+});
+
+// retrospective-6 and front-pages-1: six election dates the cache holds to the month or wrong, each from its English
+// Wikipedia article and a second source (scripts/election-corrections.mjs).
+test('Norway 1969, Slovenia 1997, Jamaica 2025, Lithuania 2019 and 2024 and Croatia 2024 have their polling days (retrospective-6)', () => {
+  const countries = retro();
+  for (const [key, title, date] of [
+    ['Q20', '1969 Norwegian parliamentary election', '1969-09-07'], ['Q215', '1997 Slovenian presidential election', '1997-11-23'],
+    ['Q766', '2025 Jamaican general election', '2025-09-03'], ['Q37', '2019 Lithuanian presidential election', '2019-05-12'],
+    ['Q37', '2024 Lithuanian presidential election', '2024-05-12'], ['Q224', '2024–25 Croatian presidential election', '2024-12-29'],
+    // Second reading, 25 November 2026.
+    ['Q37', '2004 Lithuanian presidential election', '2004-06-13'], ['Q37', '2014 Lithuanian presidential election', '2014-05-11'],
+    ['Q213', '2016 Czech Senate election', '2016-10-07'], ['Q213', '2018 Czech Senate election', '2018-10-05']
+  ]) {
+    const found = countries[key].events.filter(e => e.text === title);
+    assert.equal(found.length, 1, title);
+    assert.equal(found[0].date, date, title);
+    assert.equal(found[0].precision, undefined, `${title}: a day`);
+  }
+});
+
+// Second reading, 25 November 2026 (front-pages-1, the correction it named for later): a vote's date is read from
+// Wikidata with its precision, so a date held only to the month or the year is shown as "Mar 2009" or "2004", never as
+// the 1st; where Wikidata also holds a day within the month, the earliest such day is shown.
+const MONTH_ONLY = [
+  ['Q214', '2009 Slovak presidential election'], ['Q213', '2024 Czech Senate election'], ['Q213', '2026 Czech Senate election'],
+  ['Q783', '1930 Honduran legislative election'], ['Q783', '1965 Honduran presidential election'], ['Q218', '1933 Romanian general election'],
+  ['Q15180', '1927 Soviet Union legislative election'], ['Q15180', '1929 Soviet Union legislative election'],
+  ['Q15180', '1931 Soviet Union legislative election'], ['Q15180', '1936 Soviet Union legislative election']
+];
+test('a vote Wikidata dates only to the month is shown as the month, not as the 1st (front-pages-1)', async () => {
+  const { pickDate } = await import('../scripts/election-corrections.mjs');
+  assert.deepEqual(pickDate([['2004-06-01', 'month', 'preferred'], ['2004-06-13', 'day', 'normal'], ['2004-06-27', 'day', 'normal']]), { date: '2004-06-13', precision: 'day' });
+  assert.deepEqual(pickDate([['2009-03-01', 'month', 'normal']]), { date: '2009-03-01', precision: 'month' });
+  assert.deepEqual(pickDate([['1983-03-21', 'day', 'normal'], ['1983-03-20', 'day', 'normal']]), { date: '1983-03-20', precision: 'day' });
+  assert.deepEqual(pickDate([['2010-05-01', 'month', 'preferred'], ['2011-02-02', 'day', 'normal']]), { date: '2010-05-01', precision: 'month' }, 'a day outside the month is not taken');
+  assert.deepEqual(pickDate([['1990-01-01', 'day', 'deprecated']]), null);
+  // A day outside the years the title names is not taken where days inside them exist.
+  assert.deepEqual(pickDate([['2013-02-17', 'day', 'normal'], ['2008-02-24', 'day', 'normal']], '2013 Cypriot presidential election'), { date: '2013-02-17', precision: 'day' });
+  assert.deepEqual(pickDate([['2016-11-20', 'day', 'normal'], ['2015-08-09', 'day', 'normal']], '2015–17 Haitian parliamentary election'), { date: '2015-08-09', precision: 'day' });
+  const countries = retro();
+  const vote = (key, title) => countries[key].events.find(e => e.text === title);
+  // The votes the second reader found dated to the month by Wikidata (SPARQL, 25 November 2026) and shown as the 1st.
+  for (const [key, title] of MONTH_ONLY) assert.equal(vote(key, title)?.precision, 'month', `${key} ${title}`);
+  await open('#y=2009&c=Q214');
+  const items = await page.$$eval('#panel .events li', els => els.map(li => li.textContent.replace(/\s+/g, ' ').trim()));
+  assert.ok(items.some(t => /^Mar 2009 ?election/i.test(t) && t.includes('2009 Slovak presidential election')), items.join(' | '));
+  // A month that is January is shown as the month too, not as the year alone (the page shows an unmarked 1 January
+  // vote as its year).
+  if (vote('Q15180', '1935 Soviet Union legislative election')?.precision === 'month') {
+    await open('#y=1935&c=Q15180');
+    const soviet = await page.$$eval('#panel .events li', els => els.map(li => li.textContent.replace(/\s+/g, ' ').trim()));
+    assert.ok(soviet.some(t => /^Jan 1935 ?election/i.test(t)), soviet.join(' | '));
+  }
+});
+
+// Second reading, 25 November 2026: Bulgaria's Prime Minister of 2001-05 is named as he served, "Simeon
+// Sakskoburggotski" (his article's lead), with a link to his article, "Simeon II", once he takes Wikidata's dates.
+test('Bulgaria\'s Prime Minister of 2001 is Simeon Sakskoburggotski, linked to his article Simeon II', () => {
+  const c = retro().Q219;
+  const l = c.leaders.find(x => (x.archigos?.start || x.start) === '2001-07-24');
+  assert.equal(l?.full, 'Simeon Sakskoburggotski');
+  assert.equal(l.url, 'https://en.wikipedia.org/wiki/Simeon_II');
+  assert.ok(c.events.some(e => e.date === l.start && e.text === 'Simeon Sakskoburggotski takes power'), 'the arrival');
+  assert.ok(!c.events.some(e => /^Simeon II takes power/.test(e.text)), 'no regnal name in 2001');
+});
+
+// Second reading, 25 November 2026: a leader whose Wikidata item has no English label arrived as its item id
+// ("Q5771800 takes power" for Claudia Sheinbaum, "Q20055561 takes power" for Rishi Sunak).
+test('no arrival names a leader by a Wikidata id', () => {
+  const countries = retro();
+  for (const [key, c] of Object.entries(countries)) for (const e of c.events) assert.doesNotMatch(e.text, /\bQ\d+ takes power/, `${key} ${e.date}`);
+  assert.ok(countries.Q96.events.some(e => e.date === '2024-09-30' && e.text === 'Claudia Sheinbaum takes power'));
+  assert.ok(countries.Q145.events.some(e => e.date === '2022-10-25' && e.text === 'Rishi Sunak takes power'));
+});
+
+// retrospective-7: Saudi Arabia was the Kingdom of Hejaz and Nejd until 23 September 1932, North Macedonia was
+// Macedonia until 12 February 2019, and Ireland was the Irish Free State until 29 December 1937 (names.mjs).
+test('Hejaz and Nejd, Macedonia and the Irish Free State are named by the date (retrospective-7)', async () => {
+  const { displayName } = await import('../names.mjs');
+  for (const [key, name, date, want] of [
+    ['Q851', 'Saudi Arabia', '1932-09-22', 'Hejaz and Nejd'], ['Q851', 'Saudi Arabia', '1932-09-23', 'Saudi Arabia'],
+    ['Q221', 'North Macedonia', '2019-02-11', 'Macedonia'], ['Q221', 'North Macedonia', '2019-02-12', 'North Macedonia'],
+    ['Q27', 'Ireland', '1937-12-28', 'Irish Free State'], ['Q27', 'Ireland', '1937-12-29', 'Ireland']
+  ]) assert.equal(displayName(key, name, date), want, `${key} ${date}`);
+  const countries = retro();
+  assert.ok(countries.Q221.events.some(e => e.type === 'statehood' && e.text === 'Macedonia becomes an independent state'), 'the stored statehood text');
+  await open('#y=1930&c=Q851');
+  assert.equal(await page.textContent('#panel h2'), 'Hejaz and Nejd');
+  await open('#y=2000&c=Q221');
+  assert.equal(await page.textContent('#panel h2'), 'Macedonia');
+  await open('#y=1930&c=Q27');
+  assert.equal(await page.textContent('#panel h2'), 'Irish Free State');
 });

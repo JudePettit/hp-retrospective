@@ -11,11 +11,18 @@
    an old c=<Gleditsch and Ward number> opens the same state and is rewritten to its key (the data's oldKeys). */
 import { GIFEncoder, quantize, applyPalette } from 'https://cdn.jsdelivr.net/npm/gifenc@1.0.3/dist/gifenc.esm.js';
 import { displayName } from './names.mjs';
+import { buildModel, renderSvg, pxPerYear, fitsWhole, leftOut, LANES, LANE_NAME, GEOM, SLOT_PATTERN, describe, termWords, relationWords, samePerson, overlaps, dayOf, inProse } from './lanes.js';
 
 const W = 1000, H = 600;
 const TODAY = new Date().toISOString().slice(0, 10);
 // year: the year shown (the end of the period); from: the period's first year (the same year while the start rests).
-const state = { year: 2026, from: 2026, selected: null, data: null, features: [], animating: false, view: 'map', sort: { key: 'name', dir: 1 } };
+const state = { year: 2026, from: 2026, selected: null, data: null, features: [], animating: false, view: 'map', sort: { key: 'name', dir: 1 },
+  // The lanes of heads of state and government in the state panel (lanes.js): the closer view or the whole span (null
+  // until the reader chooses: the closer view where the whole span gives under 8 px a year), the term whose detail is
+  // open, the box's scroll, the bar to give the focus back to after a redraw, and Wikidata's family links between
+  // holders (data/succession.json; null until read, and where the file is missing or unreadable; its links, perhaps
+  // none, once read).
+  lanes: { key: null, close: null, chosen: null, scroll: null, focus: null }, succession: null };
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const KIND = { leader: 'leader', coup: 'irregular', election: 'election', referendum: 'referendum', border: 'border', statehood: 'statehood' };
@@ -352,10 +359,15 @@ function renderPanel() {
   // Cliopatria gives one border a year, so a change within a single year cannot be played; over a period, the years
   // in which the border differs from the year before are played one after another.
   const changedInYear = one && events.some(e => e.type === 'border');
+  // A bar of the lanes that has the focus gets it back after the panel is drawn again (drawLanes).
+  state.lanes.focus = document.activeElement?.closest?.('#lanes-scroll .lane-bar')?.dataset.id || null;
 
+  // The lanes come straight after the heading, so nothing above them changes length from year to year and they stay
+  // in place while the year moves; their notes on what is left out and their sources follow the list.
   panel.innerHTML = `<button class="close" type="button" id="close" aria-label="Close">✕</button>
     <h2>${esc(name)}</h2>
     <p class="sub">${placed ? when : coveredOn(key, date) ? `${when} · ${esc(cannotPlace([name], y))}, so the map does not draw it` : `Not an independent state at the end of ${y}`}</p>
+    ${lanesSection(key, name)}
     <h3>Political overview of ${when}</h3>
     <p class="overview">${esc(overviewText(name, a, y, leaders, offices, events, [...ruling.values()], { existed, whole: coversAll(key, a, y), outside: outside.leaders, key }))}</p>
     <div id="wiki-events" class="wiki-events">${page ? '<p class="empty">Loading events from Wikipedia…</p>' : pages.length ? `<p class="note">Wikipedia, year by year: ${pages.map(p => `<a href="${wiki(p)}" target="_blank" rel="noopener">${esc(p.slice(0, 4))}</a>`).join(' · ')}</p>` : ''}</div>
@@ -365,6 +377,7 @@ function renderPanel() {
     // One line where VM holds no leader (review R6): the date's, when the state exists then with nobody in office.
     : `<p class="empty">${coveredOn(key, date) && !inOffice(key, date) ? `VM holds no leader for ${fmt(date)}.` : `No leader recorded for ${one ? 'this year' : 'these years'}.`}</p>`}
     ${leaders.length && coveredOn(key, date) && !inOffice(key, date) ? `<p class="note">VM holds no leader for ${fmt(date)}.</p>` : ''}` : ''}
+    <div id="lanes-notes">${lanesNotes(key, name)}</div>
     ${offices.length ? `<h3>Also in office</h3>${offices.map(o => `<div class="leader">
         <div class="who"><a href="${esc(o.url || wiki(o.full))}" target="_blank" rel="noopener">${esc(o.full)}</a><span class="tag office">${o.office === 'hos' ? 'Head of state' : 'Head of government'}</span></div>
         <div class="meta">${term(o)}</div>
@@ -388,6 +401,7 @@ function renderPanel() {
     ${page ? `<p class="note">More: <a href="${wiki(page)}" target="_blank" rel="noopener">${esc(page)}</a> on Wikipedia</p>` : ''}
     ${c.iso3 ? `<p class="note">Today: <a href="https://political-atlas.pages.dev/#${c.iso3}" target="_blank" rel="noopener">${esc(c.name)} in Political Atlas</a></p>` : ''}`;
   $('#close').onclick = () => select(null);
+  drawLanes();
   if (page) loadWikiEvents(page, key, y);
   if (changes.length) {
     $('#animate').onclick = () => animateYears(key, a, y, changes);
@@ -434,23 +448,28 @@ function overviewText(name, a, y, leaders, offices, events, ruling, st = { exist
 }
 
 // The first few items of the "Events" section of Wikipedia's "<year> in <country>" article.
-const wikiCache = new Map();
+const wikiCache = new Map(), wikiPending = new Map();
 async function loadWikiEvents(page, key, y) {
-  const box = $('#wiki-events');
+  // The box is looked up after the wait: the panel may have been drawn again meanwhile.
+  const box = () => $('#wiki-events');
   try {
     if (!wikiCache.has(page)) {
-      const url = 'https://en.wikipedia.org/w/api.php?' + new URLSearchParams({ action: 'query', prop: 'extracts', explaintext: '1', exsectionformat: 'wiki', redirects: '1', titles: page, format: 'json', origin: '*' });
-      const res = await fetch(url);
-      const pages = Object.values((await res.json()).query?.pages || {});
-      wikiCache.set(page, eventsFromExtract(pages[0]?.extract || ''));
+      // A second call for the same page while the first request is out waits for it, rather than asking again.
+      if (!wikiPending.has(page)) {
+        const url = 'https://en.wikipedia.org/w/api.php?' + new URLSearchParams({ action: 'query', prop: 'extracts', explaintext: '1', exsectionformat: 'wiki', redirects: '1', titles: page, format: 'json', origin: '*' });
+        wikiPending.set(page, fetch(url).then(res => res.json()).then(json => {
+          wikiCache.set(page, eventsFromExtract(Object.values(json.query?.pages || {})[0]?.extract || ''));
+        }).finally(() => wikiPending.delete(page)));
+      }
+      await wikiPending.get(page);
     }
     if (state.selected !== key || state.year !== y || !single() || !$('#wiki-events')) return;
     const items = wikiCache.get(page);
-    box.innerHTML = items.length
+    box().innerHTML = items.length
       ? `<ul class="wiki-list">${items.map(t => `<li>${esc(t)}</li>`).join('')}</ul><p class="note">From <a href="${wiki(page)}" target="_blank" rel="noopener">${esc(page)}</a>, Wikipedia (CC BY-SA)</p>`
       : `<p class="note">More in <a href="${wiki(page)}" target="_blank" rel="noopener">${esc(page)}</a> on Wikipedia.</p>`;
   } catch {
-    if ($('#wiki-events')) box.innerHTML = `<p class="note">More in <a href="${wiki(page)}" target="_blank" rel="noopener">${esc(page)}</a> on Wikipedia.</p>`;
+    if (box()) box().innerHTML = `<p class="note">More in <a href="${wiki(page)}" target="_blank" rel="noopener">${esc(page)}</a> on Wikipedia.</p>`;
   }
 }
 function eventsFromExtract(text) {
@@ -469,6 +488,273 @@ function leaderItem(l, key, a, y) {
         ${partyChips(l, a, y) ? `<div class="parties">${partyChips(l, a, y)}</div>` : ''}
       </div>`;
 }
+/* ---------------------------------------------------------------- heads of state and government as lanes */
+// Two lanes on the period control's scale of years (lanes.js): head of state above, head of government below, each
+// bar one term, coloured by a party Wikidata dates for it, a line at the date the panel describes. Only terms from
+// free sources are drawn (Wikidata, CC0, and VM's own lists); the leaders whose names and dates are Archigos 4.1's are
+// counted from the data and stay in the list under the lanes, which remains the text alternative.
+const lanesCache = new Map();
+function lanesModel(key) {
+  const id = `${key}|${TODAY}|${state.succession ? state.succession.length : 'none'}`;
+  if (!lanesCache.has(id)) lanesCache.set(id, buildModel(country(key), key, { firstYear: state.data.firstYear, lastYear: state.data.lastYear, today: TODAY, links: state.succession || [] }));
+  return lanesCache.get(id);
+}
+const n0 = x => x.toLocaleString('en-GB');
+// How many leaders are left out because their source is Archigos, for this state and in all, counted from the data;
+// and how many of those people are in the lanes all the same, from Wikidata's own list of the office.
+function leftOutNote(key, name0, model) {
+  const c = leftOut(state.data, key), name = inProse(name0);
+  const terms = LANES.flatMap(l => model.lanes[l].terms);
+  const anyway = (country(key).leaders || []).filter(l => l.source === 'Archigos' && terms.some(t => t.kind === 'office' && samePerson(t, { full: l.full || l.name, url: l.url, qid: l.qid })
+    && overlaps(dayOf(t.start), t.end ? dayOf(t.end) : dayOf(TODAY), dayOf(l.start), l.end ? dayOf(l.end) : dayOf(TODAY)))).length;
+  const why = 'Archigos 4.1, whose page states no licence for reuse';
+  const all = `${n0(c.all)} of the ${n0(c.allTotal)} leaders in VM’s lists`;
+  if (!c.here) return `Every leader VM’s list holds for ${name} is drawn. In all, ${all} take their names and dates from ${why}; those records are not drawn (where Wikidata lists the same person in the office, that term is drawn from Wikidata), and they stay in each state’s list.`;
+  const one = c.here === 1;
+  return `${why.replace(/^./, s => s.toUpperCase())}, gives the names and dates of ${n0(c.here)} of the ${n0(c.hereTotal)} leaders in VM’s list for ${name}, so ${one ? 'that record is' : 'those records are'} not drawn (${all} in all).` +
+    (!anyway ? ` ${one ? 'It stays' : 'They stay'} in the list.`
+      : anyway === c.here ? ` ${one ? 'That person is' : `All ${n0(anyway)} people are`} in the lanes anyway, from Wikidata’s own list of the office.`
+        : ` ${n0(anyway)} of them ${anyway === 1 ? 'is' : 'are'} in the lanes anyway, from Wikidata’s own list of the office; the others are only in the list.`);
+}
+// The sources of the lanes for the state shown (the file names are in the footer and the README).
+function lanesSourceNote(key, name0, model) {
+  const links = state.succession && state.succession.some(x => x.country === key);
+  return `The lanes are drawn from Wikidata (CC0): the heads of state and government of ${inProse(name0)} and its leaders’ offices` +
+    `${model.listed ? '; and from VM’s own list, each entry read from at least two of Wikidata, Wikipedia’s lists of office holders and rulers.org' : ''}.` +
+    `${links ? ' Family links between holders: Wikidata (CC0).' : ''}`;
+}
+// The two notes that go after the list of who was in charge, so the lanes keep to their bars, key and caveats.
+function lanesNotes(key, name) {
+  const model = lanesModel(key);
+  if (!model.drawn) return '';
+  return `<p class="note lanes-left-out" id="lanes-left-out">${esc(leftOutNote(key, name, model))}</p>
+    <p class="note lanes-source" id="lanes-source">${esc(lanesSourceNote(key, name, model))}</p>`;
+}
+function lanesSection(key, name) {
+  const model = lanesModel(key);
+  if (state.lanes.key !== key) state.lanes = { key, close: state.lanes.close, chosen: null, scroll: null, focus: state.lanes.focus };
+  const span2 = `${model.from}–${model.to}`;
+  const head = `<div class="lanes-head"><h3 id="lanes-title">Heads of state and government, ${span2}</h3>${model.drawn ? '<button type="button" class="prp-btn sm" id="lanes-zoom">Closer view</button>' : ''}</div>`;
+  if (!model.drawn) {
+    return `<section class="lanes" id="lanes" aria-labelledby="lanes-title" aria-live="off">${head}
+      <p class="empty" id="lanes-none">No term can be drawn for ${esc(inProse(name))}: no head of state or government from Wikidata, and no leader from a source free to reuse, is held for it.</p>
+      <p class="note lanes-left-out" id="lanes-left-out">${esc(leftOutNote(key, name, model))}</p></section>`;
+  }
+  return `<section class="lanes" id="lanes" aria-labelledby="lanes-title" aria-live="off">${head}
+    <ul class="lanes-caveat" id="lanes-caveat">
+      <li>A bar’s length is time in office, not power. In a one-party state the party’s leader may hold neither office; the list below names who held power.</li>
+      <li>No marks for irregular entry (coups): the list below says how each leader came and went.</li>
+      <li>A faded start or end is a date known only to the year or month; a faded end with a dotted edge, “end not recorded”, is an open term in Wikidata that another holder follows.</li>
+      <li>Grey: party not dated in Wikidata. Grey with a dotted edge: a dated party beyond the eighth colour, named in the term. Light fill with a dashed edge: no party recorded; with a solid edge: independent (no party). Some party colours are hatched as well, so that no two look alike.</li>
+      <li>A label under a lane is a family link Wikidata records between two holders; with none, a term says “no direct family link recorded”.</li>
+    </ul>
+    <div class="lanes-frame"><div class="lanes-names" aria-hidden="true"></div><div class="lanes-scroll" id="lanes-scroll"></div><div class="lanes-tip" hidden></div></div>
+    <ul class="lanes-key" id="lanes-key" aria-label="Key to the lanes"></ul>
+    <p class="lanes-keys" id="lanes-keys">Choose a bar for its term; by keyboard, Tab to a lane, then the arrow keys, Enter or Space.</p>
+    <div class="lanes-detail" id="lanes-detail" aria-live="off"></div>
+  </section>`;
+}
+const swatchKey = (cls, text) => `<li><span class="lane-swatch ${cls}" aria-hidden="true"></span>${esc(text)}</li>`;
+// The box's width when the lanes were last drawn: a resize that keeps it (a phone's address bar hiding) draws nothing.
+let lanesW = 0;
+function drawLanes() {
+  const key = state.selected, box = $('#lanes-scroll');
+  if (!key || !box) return;
+  const model = lanesModel(key), L = state.lanes;
+  // The bar that has the focus, to give it back after the redraw (a year step, Play, a resize).
+  const had = document.activeElement?.closest?.('#lanes-scroll .lane-bar')?.dataset.id || L.focus;
+  L.focus = null;
+  const bw = box.clientWidth || 340;
+  lanesW = box.clientWidth;
+  // The closer view where the whole span gives under 8 px a year, until the reader chooses.
+  const close = L.close ?? !fitsWhole(model, bw);
+  const px = pxPerYear(model, bw, close);
+  const shown = { a: state.from, b: state.year, ref: dateFor(state.year) };
+  const out = renderSvg(model, { px, shown, chosen: L.chosen });
+  box.innerHTML = out.svg;
+  box.querySelector('.lanes-svg')?.setAttribute('aria-describedby', 'lanes-keys');
+  // The lanes' names stay at the left while the bars scroll beneath them.
+  $('.lanes-names').innerHTML = out.laneLabels.map(l => `<span style="top:${l.y}px">${esc(LANE_NAME[l.lane])}${l.rows > 1 ? ` · ${l.rows} rows` : ''}${l.count ? '' : ' · none drawn'}${l.samePeople ? ' · same people as head of state' : ''}</span>`).join('');
+  const terms = LANES.flatMap(l => model.lanes[l].terms);
+  const has = f => terms.some(f);
+  const yearPx = days => (days / 365.2425) * px;
+  const pat = s => (SLOT_PATTERN[s] ? ` pat-${SLOT_PATTERN[s]}` : '');
+  $('#lanes-key').innerHTML = [
+    ...model.parties.filter(p => p.slot).map(p => swatchKey(`party-${p.slot}${pat(p.slot)}`, p.name)),
+    has(t => t.slot === 0) ? swatchKey('party-other', 'Other parties dated in Wikidata (named in each term)') : '',
+    has(t => t.party.status === 'undated') ? swatchKey('party-undated', 'Party not dated') : '',
+    has(t => t.party.status === 'independent') ? swatchKey('party-independent', 'Independent (no party)') : '',
+    has(t => t.party.status === 'none') ? swatchKey('party-none', 'No party recorded') : '',
+    has(t => t.softStart || t.softEnd) ? swatchKey('soft', 'Faded: date known only to the year or month') : '',
+    has(t => t.noEnd) ? swatchKey('no-end', 'End not recorded (drawn to the next term)') : '',
+    LANES.some(l => model.lanes[l].holes.length) ? swatchKey('hole', 'No term drawn here: see the list below') : '',
+    model.gaps.some(([p, q]) => yearPx(q - p) >= 4) ? swatchKey('gap', 'Not an independent state') : '',
+    swatchKey('shown', single() ? `The year shown, ${state.year}` : `The years shown, ${state.from}–${state.year}`)
+  ].join('');
+  // The box keeps the year shown in view: where it was already in view, the scroll stays; else it is centred.
+  const w = box.clientWidth, keep = L.scroll != null && out.refX >= L.scroll + 16 && out.refX <= L.scroll + w - 16;
+  box.scrollLeft = out.width <= w ? 0 : keep ? L.scroll : Math.max(0, out.refX - w / 2);
+  // A long bar's name stays in sight while the box scrolls: it slides within its bar to the box's left edge.
+  const names = [...box.querySelectorAll('.lane-text')];
+  const slide = () => {
+    const left = box.scrollLeft + 4;
+    for (const el of names) {
+      const x0 = +el.dataset.x0, x1 = +el.dataset.x1, tw = +el.dataset.w;
+      el.setAttribute('x', Math.max(x0, Math.min(left, x1 - tw)).toFixed(2));
+    }
+  };
+  slide();
+  box.onscroll = () => { L.scroll = box.scrollLeft; slide(); };
+  // One tab stop a lane (the bar that had the focus, else the term open in the detail, else the one at the date shown,
+  // else the first); the arrow keys move along the lane in date order, up and down to the other lane.
+  const ref = dayOf(shown.ref);
+  for (const lane of LANES) {
+    const list = model.lanes[lane].terms;
+    if (!list.length) continue;
+    const stop = list.find(t => t.id === had) || list.find(t => t.id === L.chosen) || list.find(t => t.ds <= ref && ref < t.de) || list.filter(t => t.ds <= ref).at(-1) || list[0];
+    box.querySelector(`.lane-bar[data-id="${stop.id}"]`)?.setAttribute('tabindex', '0');
+  }
+  const byId = new Map(terms.map(t => [t.id, t]));
+  const tip = $('.lanes-tip'), frame = $('.lanes-frame');
+  box.querySelectorAll('.lane-bar').forEach(el => {
+    const t = byId.get(el.dataset.id);
+    el.onclick = () => chooseTerm(t.id, { focus: true });
+    el.onkeydown = ev => laneKey(ev, t, model);
+    el.onmouseenter = () => {
+      tip.textContent = describe(t);
+      tip.hidden = false;
+      const r = el.getBoundingClientRect(), f = frame.getBoundingClientRect();
+      tip.style.left = `${Math.max(0, Math.min(r.left - f.left, f.width - tip.offsetWidth))}px`;
+      tip.style.top = `${r.bottom - f.top + 4}px`;
+    };
+    el.onmouseleave = () => { tip.hidden = true; };
+  });
+  // A tap beside a thin bar: the bar nearest the tap in that lane, within 12 px, is chosen (a bar of 3 px is too narrow
+  // a target for a finger).
+  const svgEl = box.querySelector('.lanes-svg');
+  if (svgEl) svgEl.onclick = ev => {
+    if (ev.target.closest('.lane-bar')) return;
+    const r = svgEl.getBoundingClientRect(), px0 = ev.clientX - r.left, py = ev.clientY - r.top;
+    let best = null, bestD = 12;
+    for (const lab of out.laneLabels) for (const t of model.lanes[lab.lane].terms) {
+      const [x0, bw0] = out.at.get(t.id), y0 = lab.y + GEOM.title + t.row * (GEOM.row + GEOM.rowGap);
+      const dx = Math.max(0, x0 - px0, px0 - (x0 + bw0)), dy = Math.max(0, y0 - py, py - (y0 + GEOM.row));
+      const d = Math.hypot(dx, dy);
+      if (d <= bestD) { bestD = d; best = t; }
+    }
+    if (best) chooseTerm(best.id, { focus: true });
+  };
+  const zoom = $('#lanes-zoom');
+  if (zoom) {
+    zoom.textContent = close ? 'Whole span' : 'Closer view';
+    zoom.dataset.close = String(close);
+    zoom.onclick = () => { L.close = !close; L.scroll = null; drawLanes(); };
+  }
+  // The open term's words: written again only where they changed, and not announced (only a choice is).
+  const detail = $('#lanes-detail');
+  if (L.chosen && byId.has(L.chosen)) { if (detail?.firstElementChild?.dataset.id !== L.chosen) showTerm(byId.get(L.chosen), model); }
+  else if (detail) detail.innerHTML = '';
+  const el = had && byId.has(had) ? box.querySelector(`.lane-bar[data-id="${had}"]`) : null;
+  if (el) {
+    box.querySelectorAll(`.lane-bar[data-lane="${el.dataset.lane}"]`).forEach(b => b.setAttribute('tabindex', b === el ? '0' : '-1'));
+    el.focus({ preventScroll: true });
+  }
+}
+function laneKey(ev, t, model) {
+  const list = model.lanes[t.lane].terms;
+  let to = null;
+  if (ev.key === 'ArrowRight') to = list[Math.min(list.length - 1, t.index + 1)];
+  else if (ev.key === 'ArrowLeft') to = list[Math.max(0, t.index - 1)];
+  else if (ev.key === 'Home') to = list[0];
+  else if (ev.key === 'End') to = list.at(-1);
+  else if (ev.key === 'ArrowUp' || ev.key === 'ArrowDown') {
+    const other = model.lanes[t.lane === 'state' ? 'government' : 'state'].terms;
+    const mid = (t.ds + t.de) / 2;
+    to = other.find(u => u.ds <= mid && mid < u.de) || [...other].sort((p, q) => Math.abs(p.ds - mid) - Math.abs(q.ds - mid))[0] || null;
+  } else if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); chooseTerm(t.id, { focus: true }); return; }
+  else return;
+  ev.preventDefault();
+  if (!to) return;
+  moveStop(to);
+}
+// The lane's single tab stop moves to the term, which takes the focus.
+function moveStop(t) {
+  const box = $('#lanes-scroll');
+  box.querySelectorAll(`.lane-bar[data-lane="${t.lane}"]`).forEach(el => el.setAttribute('tabindex', el.dataset.id === t.id ? '0' : '-1'));
+  const el = box.querySelector(`.lane-bar[data-id="${t.id}"]`);
+  el.focus();
+  const r = el.getBoundingClientRect(), b = box.getBoundingClientRect();
+  if (r.right > b.right || r.left < b.left) box.scrollLeft += r.left - b.left - b.width / 2 + r.width / 2;
+}
+function chooseTerm(id, { focus = false } = {}) {
+  const model = lanesModel(state.selected), t = LANES.flatMap(l => model.lanes[l].terms).find(u => u.id === id);
+  if (!t) return;
+  state.lanes.chosen = id;
+  $('#lanes-scroll').querySelectorAll('.lane-bar').forEach(el => el.classList.toggle('chosen', el.dataset.id === id));
+  // A choice is announced; the same words written again after a redraw are not (drawLanes).
+  $('#lanes-detail')?.setAttribute('aria-live', 'polite');
+  showTerm(t, model);
+  if (focus) moveStop(t);
+}
+// The source of a term, from its own record: in the eleven states with hand-built lists both the leaders and the
+// office holders are VM's own (scripts/leader-lists.mjs: its `offices` replace Wikidata's P35 and P6 for them).
+function termSource(t, model) {
+  if (t.kind === 'office') return model.listed ? 'VM’s own list, each entry read from at least two of Wikidata, Wikipedia’s lists of office holders and rulers.org'
+    : `Wikidata (CC0): the state’s ${t.lane === 'state' ? 'head of state (P35)' : 'head of government (P6)'}`;
+  if (t.rec.source === 'leader-lists') return 'VM’s own list, each entry read from at least two of Wikidata, Wikipedia’s lists of office holders and rulers.org';
+  return t.rec.archigos ? 'Wikidata (CC0): the person’s “position held” (P39), whose dates agree with Archigos 4.1’s within 31 days' : 'Wikidata (CC0)';
+}
+// The chosen term in words: name, office, dates, party and source, as the list gives them, and its family link.
+function showTerm(t, model) {
+  const box = $('#lanes-detail');
+  if (!box) return;
+  const office = `${LANE_NAME[t.lane]}${t.position ? ` (${t.position})` : ''}${t.role ? `, ${t.role}` : ''}`;
+  const p = t.party;
+  const names = list => list.map(m => m.name).join(' and ');
+  const party = p.status === 'dated' ? `${p.dated.map(m => `<a class="party" href="${esc(m.url)}" target="_blank" rel="noopener">${esc(m.name)}</a>`).join('')}<span class="lanes-why">membership dated in Wikidata</span>`
+    : p.status === 'independent' ? '<span class="lanes-why">Independent (no party): Wikidata gives “independent politician” for the term.</span>'
+      : p.status === 'undated' ? `<span class="lanes-why">Party not dated: ${[p.undated.length ? `Wikidata names ${esc(names(p.undated))} for this person, with no dates of membership` : '', p.outside.length ? `Wikidata dates the membership of ${esc(names(p.outside))}, but not for this term` : ''].filter(Boolean).join('; ')}.</span>`
+        : '<span class="lanes-why">No party recorded.</span>';
+  const prevT = t.prev && LANES.flatMap(l => model.lanes[l].terms).find(u => u.id === t.prev);
+  // The family link, or the lack of one, only where the previous holder is the bar this term follows (lanes.js).
+  const relation = t.role ? ''
+    : t.relation ? `${esc(relationWords(t.relation).replace(/^./, c => c.toUpperCase()))} (Wikidata${t.relation.property ? `, ${esc(t.relation.property)}` : ''}).`
+      : !state.succession ? ''
+        : prevT ? `Relation to the previous holder, ${esc(prevT.full)}: no direct family link between the two in Wikidata.`
+          : t.prevGap ? 'The previous holder is not drawn here, so no family link is shown.' : '';
+  const url = t.url || `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(`${t.full} ${country(state.selected).name}`)}`;
+  box.innerHTML = `<div class="leader lanes-term" data-id="${esc(t.id)}">
+      <div class="who"><a href="${esc(url)}" target="_blank" rel="noopener">${esc(t.full)}</a></div>
+      <div class="meta">${esc(office)} · ${esc(termWords(t))}${t.open ? ' (still in office)' : ''}${t.noEnd ? ' (Wikidata gives no end; drawn to the start of the next term in this lane)' : ''}</div>
+      <div class="parties">${party}</div>
+      ${relation ? `<div class="meta lanes-relation">${relation}</div>` : ''}
+      <div class="meta">Source: ${esc(termSource(t, model))}.</div>
+    </div>`;
+}
+window.addEventListener('resize', () => {
+  const w = $('#lanes-scroll')?.clientWidth;
+  if (state.selected && w && w !== lanesW) drawLanes();
+});
+// Wikidata's family links between holders of one office (data/succession.json, written by the build). The page works
+// without it: a missing, empty or unreadable file gives no labels and no error.
+async function loadSuccession() {
+  try {
+    const res = await fetch('data/succession.json');
+    const json = res.ok ? await res.json() : null;
+    // Read: its links (perhaps none). Missing or unreadable: null, and no term speaks of a family link.
+    state.succession = Array.isArray(json?.links) ? json.links : null;
+  } catch { state.succession = null; }
+  // Only the lanes and their notes are drawn again, not the whole panel (which would fetch Wikipedia's events twice).
+  if (state.succession && state.selected && $('#lanes')) {
+    const key = state.selected, name = nameOf(key, dateFor(state.year));
+    state.lanes.focus = document.activeElement?.closest?.('#lanes-scroll .lane-bar')?.dataset.id || null;
+    $('#lanes').outerHTML = lanesSection(key, name);
+    const notes = $('#lanes-notes');
+    if (notes) notes.innerHTML = lanesNotes(key, name);
+    drawLanes();
+  }
+}
+
 // The day before a date (an ending state is named by the name it had until that day: the Soviet Union, review R8).
 const dayBefore = d => new Date(Date.parse(`${d}T00:00:00Z`) - 864e5).toISOString().slice(0, 10);
 function eventItem(e, cname, key) {
@@ -809,6 +1095,7 @@ function setupSearch() {
     setPeriod(f, y, { push: false });
     if (old) writeHash(); // an old #c=<number>: the same view, under the state's key
     if (c) zoomToCountry(c, [state.year]);
+    loadSuccession();
     window.addEventListener('hashchange', () => {
       const h = readHash();
       const moved = h.m !== period.movement();

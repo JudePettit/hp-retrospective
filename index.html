@@ -12,6 +12,91 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://jdpi.pages.dev/design/prp.css">
   <link rel="stylesheet" href="styles.css">
+  <style id="lanes-styles">
+    /* Heads of state and government as lanes in the state panel (app.js drawLanes, lanes.js): PRP tokens only, so the
+       lanes follow the light and dark themes. A party Wikidata dates takes one of PRP's eight categorical hues (checked
+       for colour-blind readers and against both surfaces), as a tint with the full hue as its edge, so the names on the
+       bars stay in text colour; the party is also named in the key and in each term's words, never by colour alone. */
+    .lanes { margin-top: 4px; }
+    .lanes-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+    .lanes-head .prp-btn[data-close="true"] { border-color: var(--prp-primary); background: var(--prp-primary-soft); color: var(--prp-text); }
+    .lanes-head h3 { flex: 1 1 180px; }
+    .lanes-head .prp-btn { flex: none; }
+    .lanes-caveat { margin: 0 0 8px; padding-left: 16px; color: var(--prp-text-2); font-size: var(--prp-fs-xs); line-height: 1.5; }
+    .lanes-caveat li::marker { color: var(--prp-faint); }
+    .lanes-keys { margin: 6px 0 0; color: var(--prp-muted); font-size: var(--prp-fs-xs); }
+    .lane-swatch.gap { background: var(--prp-line-soft); box-shadow: inset 0 0 0 1px var(--prp-line); }
+    .lanes-frame { position: relative; min-width: 0; border: 1px solid var(--prp-line-soft); border-radius: var(--prp-radius-sm); background: var(--prp-surface); }
+    .lanes-scroll { overflow-x: auto; overflow-y: hidden; max-width: 100%; overscroll-behavior-x: contain; }
+    .lanes-svg { display: block; }
+    .lanes-names span { position: absolute; left: 0; z-index: 1; padding: 0 6px 0 4px; border-radius: 0 3px 3px 0; background: color-mix(in srgb, var(--prp-surface) 88%, transparent);
+      color: var(--prp-muted); font: 500 10px/14px var(--prp-font-mono); letter-spacing: .06em; text-transform: uppercase; pointer-events: none; white-space: nowrap;
+      /* A long lane name stays inside the frame (the lane's list says it in full). */
+      box-sizing: border-box; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+    .lanes-tip { position: absolute; z-index: 5; max-width: min(320px, 100%); padding: 5px 8px; pointer-events: none; background: var(--prp-surface); color: var(--prp-text);
+      border: 1px solid var(--prp-line); border-radius: var(--prp-radius-sm); box-shadow: var(--prp-shadow-2); font-size: var(--prp-fs-xs); line-height: 1.4; }
+    .lanes-tip[hidden] { display: none; }
+    .lane-ground { fill: var(--prp-surface-2); }
+    .lane-gap { fill: var(--prp-line-soft); pointer-events: none; }
+    /* A stretch of a lane with no term drawn (a holder left out, or not in the data): a light hatch, never a vacancy. */
+    .lane-hole { pointer-events: none; }
+    .lanes-svg .hole-line { fill: var(--prp-line-strong); }
+    .lanes-svg .grid { stroke: var(--prp-line-soft); stroke-width: 1; }
+    .lanes-svg .axis-line, .lanes-svg .tick { stroke: var(--prp-line-strong); stroke-width: 1; }
+    .lanes-svg .tick-label { fill: var(--prp-muted); font: 10px var(--prp-font-mono); }
+    .party-1 { --lane-hue: var(--prp-cat-1); } .party-2 { --lane-hue: var(--prp-cat-2); } .party-3 { --lane-hue: var(--prp-cat-3); } .party-4 { --lane-hue: var(--prp-cat-4); }
+    .party-5 { --lane-hue: var(--prp-cat-5); } .party-6 { --lane-hue: var(--prp-cat-6); } .party-7 { --lane-hue: var(--prp-cat-7); } .party-8 { --lane-hue: var(--prp-cat-8); }
+    [class*="party-"] { --lane-fill: color-mix(in srgb, var(--lane-hue) 40%, var(--prp-surface)); --lane-edge: var(--lane-hue); }
+    /* Neutrals: "party not dated" a grey fill with a muted edge (at least 3:1 against the lane's ground in both themes);
+       "no party recorded" a light grey with a dashed edge; "independent (no party)" the same light grey with a solid
+       edge; parties past the eighth a grey with a dotted edge (each named in words). */
+    .party-undated { --lane-fill: color-mix(in srgb, var(--prp-text) 19%, var(--prp-surface)); --lane-edge: var(--prp-muted); --lane-dash: none; }
+    .party-none { --lane-fill: color-mix(in srgb, var(--prp-text) 7%, var(--prp-surface)); --lane-edge: var(--prp-muted); --lane-dash: 3 2; }
+    .party-independent { --lane-fill: color-mix(in srgb, var(--prp-text) 7%, var(--prp-surface)); --lane-edge: var(--prp-text-2); --lane-dash: none; }
+    .party-other { --lane-fill: color-mix(in srgb, var(--prp-text) 13%, var(--prp-surface)); --lane-edge: var(--prp-text-2); --lane-dash: 1 2; }
+    .lane-bar { fill: var(--lane-fill); stroke: var(--lane-edge); stroke-width: 1; stroke-dasharray: var(--lane-dash, none); cursor: pointer; }
+    .lane-bar:hover { stroke-width: 2; }
+    .lane-bar.chosen { stroke: var(--prp-text); stroke-width: 2; stroke-dasharray: none; }
+    .lane-bar:focus { outline: none; }
+    .lane-bar:focus-visible { stroke: var(--prp-focus); stroke-width: 3; stroke-dasharray: none; }
+    /* The hatched party hues (lanes.js SLOT_PATTERN): the tint, with lines of the full hue. */
+    .lane-pat .pat-ground { fill: var(--lane-fill); }
+    .lane-pat .pat-line { fill: var(--lane-hue); }
+    .no-end-edge { stroke: var(--prp-text-2); stroke-width: 1.5; stroke-dasharray: 2 2; pointer-events: none; }
+    /* Names and labels keep a halo of their ground, so the hatching, the grid and the tick marks behind them never
+       cross the letters (the line at the year shown is drawn over everything). */
+    .lane-text { fill: var(--prp-text); font: 500 10.5px var(--prp-font-ui); pointer-events: none; stroke: var(--lane-fill, var(--prp-surface)); stroke-width: 3px; stroke-linejoin: round; paint-order: stroke; }
+    .successions path { stroke: var(--prp-text-2); stroke-width: 1; }
+    .successions text { fill: var(--prp-text-2); font: italic 10px var(--prp-font-ui); stroke: var(--prp-surface); stroke-width: 3px; stroke-linejoin: round; paint-order: stroke; }
+    .shown, .shown-band { pointer-events: none; }
+    .shown-band { fill: var(--prp-focus); fill-opacity: .14; }
+    .shown-line { stroke: var(--prp-text); stroke-width: 1.5; }
+    .shown-label { fill: var(--prp-text); font: 600 10px var(--prp-font-mono); }
+    .lanes-key { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0 0; padding: 0; list-style: none; color: var(--prp-text-2); font-size: var(--prp-fs-xs); }
+    .lanes-key li { display: flex; align-items: center; gap: 6px; }
+    .lane-swatch { width: 14px; height: 10px; flex: none; border-radius: 2px; background: var(--lane-fill); box-shadow: inset 0 0 0 1px var(--lane-edge); }
+    .lane-swatch.party-none { box-shadow: none; outline: 1px dashed var(--prp-muted); outline-offset: -1px; }
+    .lane-swatch.pat-a { background: repeating-linear-gradient(45deg, var(--lane-hue) 0 1.6px, var(--lane-fill) 1.6px 5px); }
+    .lane-swatch.pat-b { background: repeating-linear-gradient(-45deg, var(--lane-hue) 0 1.6px, var(--lane-fill) 1.6px 5px); }
+    .lane-swatch.pat-c { background: repeating-linear-gradient(45deg, var(--lane-hue) 0 1.6px, transparent 1.6px 5px), repeating-linear-gradient(-45deg, var(--lane-hue) 0 1.6px, var(--lane-fill) 1.6px 5px); }
+    .lane-swatch.hole { background: repeating-linear-gradient(45deg, var(--prp-line-strong) 0 1.5px, var(--prp-surface-2) 1.5px 6px); box-shadow: inset 0 0 0 1px var(--prp-line); }
+    .lane-swatch.party-other { box-shadow: none; outline: 1px dotted var(--prp-text-2); outline-offset: -1px; }
+    .lane-swatch.soft { background: linear-gradient(90deg, var(--prp-line-strong), transparent); box-shadow: inset 0 0 0 1px var(--prp-line-soft); }
+    .lane-swatch.no-end { background: linear-gradient(90deg, var(--prp-surface-3) 40%, transparent); box-shadow: inset 1px 0 0 var(--prp-line-strong), inset 0 1px 0 var(--prp-line-strong), inset 0 -1px 0 var(--prp-line-strong); border-right: 2px dotted var(--prp-text-2); }
+    .lane-swatch.shown { width: 10px; background: color-mix(in srgb, var(--prp-focus) 14%, var(--prp-surface)); box-shadow: inset 2px 0 0 -0.5px var(--prp-text); }
+    .lanes-detail:empty { display: none; }
+    .lanes-detail { margin-top: 8px; }
+    .lanes-term { border-left: 3px solid var(--prp-primary); }
+    .lanes-why { color: var(--prp-muted); font-size: var(--prp-fs-xs); align-self: center; }
+    .lanes-relation { color: var(--prp-text-2); }
+    .lanes-left-out, .lanes-source { margin-top: 8px; }
+    @media (forced-colors: active) {
+      .lane-bar { stroke: CanvasText; }
+      .lane-bar.chosen, .lane-bar:focus-visible { stroke: Highlight; }
+      .shown-line { stroke: Highlight; }
+    }
+    @media print { .lanes-scroll { overflow: visible; } .lanes-head .prp-btn, .lanes-tip { display: none; } }
+  </style>
   <script src="https://jdpi.pages.dev/design/prp-bar.js" data-suite="rs" data-module="retrospective" defer></script>
 </head>
 <body>
@@ -88,7 +173,7 @@
   </main>
 
   <footer class="prp-sources">
-    <p><b>Sources.</b> Borders: <a href="https://github.com/Seshat-Global-History-Databank/cliopatria">Cliopatria v0.2.1</a> (Seshat Global History Databank), polity borders by the year to 2024, changed by VM: the shapes simplified for the web, and the rows that join other rows (such as the British Empire) left out; <a href="https://github.com/Seshat-Global-History-Databank/cliopatria/blob/v0.2.1/LICENSE.md">CC BY 4.0</a>. States are joined across sources by their <a href="https://www.wikidata.org">Wikidata</a> items. Statehood (when each state began, ended or was unified): Wikidata (CC0), from each state’s inception and dissolution statements and those of the items before and after it; every pick that is not Wikidata’s single preferred value is listed, with its reason, in scripts/build-statehood.mjs. Leaders’ names and dates: Wikidata (CC0), each from the person’s “position held” statement where its dates agree with Archigos’s within 31 days (<span id="leader-count">for most of the leaders Archigos counts</span>), named by the English Wikipedia article the person’s item links to; otherwise, and for which leader is counted and how each took and left office (to 2015): <a href="https://www.rochester.edu/college/faculty/hgoemans/data.htm">Archigos 4.1</a> (Goemans, Gleditsch and Chiozza), whose page states no licence and asks users to “cite this article as their reference for the data” (Journal of Peace Research, 2009); kept until VM’s owner decides, because no free source records how leaders took and left office, so without it the irregular seizures of power could not be shown. Leaders after 2015, heads of state and government, parties in power, national elections and referendums: <a href="https://www.wikidata.org">Wikidata</a> (CC0). Year pages and event lists: Wikipedia (CC BY-SA). <span id="election-corrections">Seventeen votes are corrected where this site’s copy of Wikidata had the wrong date or country (Saint Vincent and the Grenadines 2025; Grenada 1967, 2003 and 2026; Norway 1969; Slovenia 1997; Jamaica 2025; Lithuania 1991, 2004, 2014, 2019 and 2024; Croatia 2024; Ukraine 1991; North Macedonia 1991; Czechia 2016 and 2018): each takes its date and country from its English Wikipedia article, and they are listed, with their sources, in scripts/election-corrections.mjs in this site’s code.</span> <span id="votes-left-out">Votes that Wikidata files under a state but that were held by one of its colonies, regions, cities or communities, a few entries that are not public votes, and votes that were planned but never held, are left out; they are listed, state by state, in the same file. Leaders’ names that Archigos misspells are corrected from Wikidata and the leaders’ English Wikipedia articles, as listed in scripts/leader-corrections.mjs.</span></p>
+    <p><b>Sources.</b> Borders: <a href="https://github.com/Seshat-Global-History-Databank/cliopatria">Cliopatria v0.2.1</a> (Seshat Global History Databank), polity borders by the year to 2024, changed by VM: the shapes simplified for the web, and the rows that join other rows (such as the British Empire) left out; <a href="https://github.com/Seshat-Global-History-Databank/cliopatria/blob/v0.2.1/LICENSE.md">CC BY 4.0</a>. States are joined across sources by their <a href="https://www.wikidata.org">Wikidata</a> items. Statehood (when each state began, ended or was unified): Wikidata (CC0), from each state’s inception and dissolution statements and those of the items before and after it; every pick that is not Wikidata’s single preferred value is listed, with its reason, in scripts/build-statehood.mjs. Leaders’ names and dates: Wikidata (CC0), each from the person’s “position held” statement where its dates agree with Archigos’s within 31 days (<span id="leader-count">for most of the leaders Archigos counts</span>), named by the English Wikipedia article the person’s item links to; otherwise, and for which leader is counted and how each took and left office (to 2015): <a href="https://www.rochester.edu/college/faculty/hgoemans/data.htm">Archigos 4.1</a> (Goemans, Gleditsch and Chiozza), whose page states no licence and asks users to “cite this article as their reference for the data” (Journal of Peace Research, 2009); kept until VM’s owner decides, because no free source records how leaders took and left office, so without it the irregular seizures of power could not be shown. Leaders after 2015, heads of state and government, parties in power, national elections and referendums: <a href="https://www.wikidata.org">Wikidata</a> (CC0). Year pages and event lists: Wikipedia (CC BY-SA). The lanes of heads of state and government draw only what is free to reuse: Wikidata’s heads of state (P35) and of government (P6) and the leaders from Wikidata (CC0); for Montenegro and the ten microstates, VM’s own lists (scripts/leader-lists.mjs, facts read from Wikidata, Wikipedia’s lists and rulers.org); and family links between successive holders from Wikidata (CC0, data/succession.json). Leaders from Archigos stay in the lists and are not drawn. <span id="election-corrections">Seventeen votes are corrected where this site’s copy of Wikidata had the wrong date or country (Saint Vincent and the Grenadines 2025; Grenada 1967, 2003 and 2026; Norway 1969; Slovenia 1997; Jamaica 2025; Lithuania 1991, 2004, 2014, 2019 and 2024; Croatia 2024; Ukraine 1991; North Macedonia 1991; Czechia 2016 and 2018): each takes its date and country from its English Wikipedia article, and they are listed, with their sources, in scripts/election-corrections.mjs in this site’s code.</span> <span id="votes-left-out">Votes that Wikidata files under a state but that were held by one of its colonies, regions, cities or communities, a few entries that are not public votes, and votes that were planned but never held, are left out; they are listed, state by state, in the same file. Leaders’ names that Archigos misspells are corrected from Wikidata and the leaders’ English Wikipedia articles, as listed in scripts/leader-corrections.mjs.</span></p>
     <p><b>Method.</b> Each state is coloured by the most significant thing that happened to it that year: its independence, union or end as a state (from Wikidata), otherwise an irregular seizure of power (a coup or other irregular entry in Archigos), otherwise a new leader, otherwise a border in Cliopatria that differs from the year before’s. Borders are by the year, in Cliopatria’s sample years: each year is drawn on Cliopatria’s rows for that year, and a state’s border differs when its area in Cliopatria differs from the year before’s by more than 1%, which may be a redrawing of the rows rather than a change of border. 2025 and 2026 are shown at 2024, the last year Cliopatria holds. A state is covered while it is an independent state in Wikidata (from 1926, or from the day it began), and a change of constitution is not a break; each date is shown as precisely as Wikidata gives it (Austria’s return in 1955 to the year only). Outside a state’s statehood, the leaders and events VM’s lists hold for it are listed apart in its panel, under “While not an independent state”, and the year’s counts leave them out. Cliopatria’s polity rows are matched to the covered states by name and year in scripts/cliopatria-states.mjs. Over a period of years, each state takes the most significant thing that happened in any of them, on the borders at the end of the period, and the panels list every leader, party and event of the period. Polities that are not covered states appear uncoloured.</p>
     <p><b>Limits.</b> Cliopatria gives one border a year, so the border animation moves from year to year, and a change within a year cannot be shown. Where a state exists in a year but has no row of its own in Cliopatria (Liechtenstein and San Marino in every year; Canada 1926–31; Haiti 1926–35; the states Cliopatria draws inside the Axis powers’ lands in the Second World War: Albania 1939–43, Poland 1940–52, the Netherlands, Belgium, Luxembourg and Monaco 1940–44, Iceland 1940–45, Denmark 1941–44, Greece and Yugoslavia 1941–44, Italy 1944; Japan 1946–52; most of the Soviet and Yugoslav successors in 1991, and Latvia in 1990–91; the full list is in the README), the page says: VM cannot place this on a free border for that year. Where a state exists but VM holds no leader for the date (the Netherlands from May 1940 to June 1945), its panel says so. Austria from 1945 to 1955 is counted as not an independent state, as Germany is from 1945 to 1949, and unlike Japan from 1945 to 1952: Wikidata ends the item for Allied-occupied Austria in 1955, to the year only, and VM follows it, though Austria’s own item gives no break after 1945. The Baltic and Georgian dates are Wikidata’s own items’ dates, and differ in kind: Lithuania is counted again from its declaration of 11 March 1990, Latvia from 4 May 1990 and Estonia from 20 August 1991, the days Wikidata ends the Latvian and Estonian Soviet republics, and Georgia from 25 December 1991, its inception as a sovereign state in Wikidata; in 1940 Latvia ends on 17 June, Estonia and Lithuania on 21 July. So at the end of 1990 Latvia and Lithuania are counted and Estonia is not. Cliopatria’s rows also hold lands a state ruled but that were not part of it (Greenland with Denmark from 1946; Algeria, which has a row of its own, with France from 1958 to 2023), so a state’s area in Cliopatria can be far larger than the state. Archigos names some leaders by surname only; where Wikidata has no match, the leader links to a Wikipedia search. After 2015 each country follows the office Archigos tracked, so a strong leader in the other office appears under “Also in office”. Election coverage depends on Wikidata.</p>
   </footer>

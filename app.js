@@ -11,7 +11,7 @@
    an old c=<Gleditsch and Ward number> opens the same state and is rewritten to its key (the data's oldKeys). */
 import { GIFEncoder, quantize, applyPalette } from 'https://cdn.jsdelivr.net/npm/gifenc@1.0.3/dist/gifenc.esm.js';
 import { displayName } from './names.mjs';
-import { buildModel, renderSvg, pxPerYear, fitsWhole, leftOut, LANES, LANE_NAME, GEOM, SLOT_PATTERN, describe, termWords, relationWords, samePerson, overlaps, dayOf, inProse } from './lanes.js';
+import { buildModel, renderSvg, pxPerYear, fitsWhole, leftOut, LANES, LANE_NAME, GEOM, SLOT_PATTERN, describe, termWords, relationWords, samePerson, overlaps, dayOf, inProse, oneOfficeWords } from './lanes.js';
 
 const W = 1000, H = 600;
 const TODAY = new Date().toISOString().slice(0, 10);
@@ -519,8 +519,14 @@ function leftOutNote(key, name0, model) {
 // The sources of the lanes for the state shown (the file names are in the footer and the README).
 function lanesSourceNote(key, name0, model) {
   const links = state.succession && state.succession.some(x => x.country === key);
+  // Terms whose record names its own source (scripts/leader-corrections.mjs): heads of state that Wikidata's P35 leaves
+  // out, and offices VM lists or dates by hand (fixer, 26 November 2026).
+  const own = LANES.flatMap(l => [...model.lanes[l].terms, ...model.lanes[l].terms.flatMap(t => t.alsoGovernment || [])]).filter(t => t.rec?.sourceNote);
+  const reigns = own.some(t => t.rec.source === 'reigns'), byHand = own.some(t => t.rec.source !== 'reigns');
   return `The lanes are drawn from Wikidata (CC0): the heads of state and government of ${inProse(name0)} and its leaders’ offices` +
-    `${model.listed ? '; and from VM’s own list, each entry read from at least two of Wikidata, Wikipedia’s lists of office holders and rulers.org' : ''}.` +
+    `${model.listed ? '; and from VM’s own list, each entry read from at least two of Wikidata, Wikipedia’s lists of office holders and rulers.org (B. Schemmel)' : ''}` +
+    `${reigns ? '; with the heads of state that Wikidata’s head of state (P35) leaves out, added in scripts/leader-corrections.mjs from their “position held” (P39) in Wikidata or their English Wikipedia articles' : ''}` +
+    `${byHand ? '; with the terms put right in scripts/leader-corrections.mjs, each naming its source' : ''}.` +
     `${links ? ' Family links between holders: Wikidata (CC0).' : ''}`;
 }
 // The two notes that go after the list of who was in charge, so the lanes keep to their bars, key and caveats.
@@ -549,6 +555,7 @@ function lanesSection(key, name) {
       <li>A label under a lane is a family link Wikidata records between two holders; with none, a term says “no direct family link recorded”.</li>
     </ul>
     <div class="lanes-frame"><div class="lanes-names" aria-hidden="true"></div><div class="lanes-scroll" id="lanes-scroll"></div><div class="lanes-tip" hidden></div></div>
+    ${model.lanes.government.folded ? `<p class="lanes-one-office" id="lanes-one-office">${esc(oneOfficeWords(model, name))}</p>` : ''}
     <ul class="lanes-key" id="lanes-key" aria-label="Key to the lanes"></ul>
     <p class="lanes-keys" id="lanes-keys">Choose a bar for its term; by keyboard, Tab to a lane, then the arrow keys, Enter or Space.</p>
     <div class="lanes-detail" id="lanes-detail" aria-live="off"></div>
@@ -699,16 +706,21 @@ function chooseTerm(id, { focus = false } = {}) {
 // The source of a term, from its own record: in the eleven states with hand-built lists both the leaders and the
 // office holders are VM's own (scripts/leader-lists.mjs: its `offices` replace Wikidata's P35 and P6 for them).
 function termSource(t, model) {
-  if (t.kind === 'office') return model.listed ? 'VM’s own list, each entry read from at least two of Wikidata, Wikipedia’s lists of office holders and rulers.org'
+  // A record that names its own source (scripts/leader-corrections.mjs: REIGNS, and offices listed or dated by hand).
+  if (t.rec?.sourceNote) return t.rec.sourceNote;
+  if (t.kind === 'office') return model.listed ? 'VM’s own list, each entry read from at least two of Wikidata, Wikipedia’s lists of office holders and rulers.org (B. Schemmel)'
     : `Wikidata (CC0): the state’s ${t.lane === 'state' ? 'head of state (P35)' : 'head of government (P6)'}`;
-  if (t.rec.source === 'leader-lists') return 'VM’s own list, each entry read from at least two of Wikidata, Wikipedia’s lists of office holders and rulers.org';
+  if (t.rec.source === 'leader-lists') return 'VM’s own list, each entry read from at least two of Wikidata, Wikipedia’s lists of office holders and rulers.org (B. Schemmel)';
   return t.rec.archigos ? 'Wikidata (CC0): the person’s “position held” (P39), whose dates agree with Archigos 4.1’s within 31 days' : 'Wikidata (CC0)';
 }
 // The chosen term in words: name, office, dates, party and source, as the list gives them, and its family link.
 function showTerm(t, model) {
   const box = $('#lanes-detail');
   if (!box) return;
-  const office = `${LANE_NAME[t.lane]}${t.position ? ` (${t.position})` : ''}${t.role ? `, ${t.role}` : ''}`;
+  const office = `${t.alsoGovernment ? 'Head of state and of government' : LANE_NAME[t.lane]}${t.position ? ` (${t.position})` : ''}${t.role ? `, ${t.role}` : ''}`;
+  // One person in both offices (lanes.js, `folded`): the same person's term as head of government, with its own dates
+  // and source, as the second lane would have shown it.
+  const asGov = (t.alsoGovernment || []).map(g => `<div class="meta lanes-as-gov">As head of government: ${esc(termWords(g))}${g.open ? ' (still in office)' : ''}; source: ${esc(termSource(g, model))}.</div>`).join('');
   const p = t.party;
   const names = list => list.map(m => m.name).join(' and ');
   const party = p.status === 'dated' ? `${p.dated.map(m => `<a class="party" href="${esc(m.url)}" target="_blank" rel="noopener">${esc(m.name)}</a>`).join('')}<span class="lanes-why">membership dated in Wikidata</span>`
@@ -727,6 +739,7 @@ function showTerm(t, model) {
       <div class="who"><a href="${esc(url)}" target="_blank" rel="noopener">${esc(t.full)}</a></div>
       <div class="meta">${esc(office)} · ${esc(termWords(t))}${t.open ? ' (still in office)' : ''}${t.noEnd ? ' (Wikidata gives no end; drawn to the start of the next term in this lane)' : ''}</div>
       <div class="parties">${party}</div>
+      ${asGov}
       ${relation ? `<div class="meta lanes-relation">${relation}</div>` : ''}
       <div class="meta">Source: ${esc(termSource(t, model))}.</div>
     </div>`;

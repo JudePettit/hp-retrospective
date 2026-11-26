@@ -6,8 +6,9 @@
 // Each entry is one election, found by its English Wikipedia article (the link the page shows). It is moved to the
 // country `key` (its Wikidata item, as countries.mjs keys the states) if it was filed elsewhere, its date is set to
 // `date`, and it is added to `key` if the fetch missed it.
-// `wd` is the election's Wikidata item, and `sources` say where the date was read (checked on 17 November 2026, and
-// for the six entries added on 25 November 2026, on that day).
+// `wd` is the election's Wikidata item, and `sources` say where the date was read: checked on 17 November 2026, or on
+// the day an entry's own comment gives (the entries added on 25 November 2026 and on 26 November 2026, on those days).
+// An entry with `precision` ('month' or 'year') is a vote its sources date only so far, shown as the month or year.
 import { byDay } from './retro-shape.mjs';
 
 export const ELECTIONS = [
@@ -126,6 +127,56 @@ export const ELECTIONS = [
     key: 'Q213', wd: 'Q30321491', title: '2018 Czech Senate election', date: '2018-10-05',
     sources: ['English Wikipedia\'s article (lead: "held in the Czech Republic on 5 and 6 October 2018", second round 12 and 13 October)',
       'Czech Statistical Office, volby.gov.cz, Senát 2018: "Volby do Senátu Parlamentu ČR konané dne 05.10. – 06.10.2018"']
+  },
+  // Four votes whose dates fell in another year than their title's (small corrections, D2 to D5, read on 26 November
+  // 2026), and Kosovo's February 2025 election, which Wikidata dates only to the year.
+  {
+    key: 'Q792', wd: 'Q17087354', title: '1935 Salvadoran presidential election', date: '1935-01-13',
+    // Wikidata's only point in time (P585) is 15 January 1939. Polling ran over three days; the page lists the first.
+    sources: ['English Wikipedia\'s article (infobox and lead: held from 13 to 15 January 1935)',
+      'Spanish Wikipedia\'s article "Elección presidencial de El Salvador de 1935" (held from 13 to 15 January 1935)']
+  },
+  {
+    key: 'Q28', wd: 'Q5942985', title: '1944 Hungarian parliamentary election', date: '1944-01-01', precision: 'year',
+    // The build dated it 2 April 1945, a later round. The Provisional National Assembly was elected in the liberated
+    // east in late 1944, and members were added on 2 April and 24 June 1945. English Wikipedia and Wikidata (P585, to
+    // the month) give November 1944; Hungarian Wikipedia says the assembly's election was prepared from 14 December
+    // and the assembly met on 21 December 1944. As the sources differ on the month, the page gives the year.
+    sources: ['English Wikipedia\'s article (lead: elections held in November 1944, more members elected on 2 April and 24 June 1945)',
+      'Wikidata Q5942985, point in time (P585): November 1944 (to the month)',
+      'Hungarian Wikipedia\'s article "Ideiglenes Nemzetgyűlés" (the assembly met on 21 December 1944)']
+  },
+  {
+    key: 'Q213', wd: 'Q16153250', title: '2003 Czech presidential election', date: '2003-01-15',
+    // Parliament's joint sessions voted on 15 and 24 January and on 28 February 2003, when Václav Klaus was elected at
+    // the third. Wikidata gives 28 February 2003, 24 January 2003 and "15 January 2002" (a slip for 2003), so the build
+    // took 24 January. A vote of several rounds is listed by its first day, as the Lithuanian and Senate votes above.
+    sources: ['English Wikipedia\'s article (lead: the first two ballots, on 15 and 24 January 2003, failed; Klaus was elected on 28 February 2003)',
+      'Czech Wikipedia\'s article "Volba prezidenta České republiky 2003" (joint sessions on 15 and 24 January and 28 February 2003)']
+  },
+  {
+    key: 'Q1246', wd: 'Q113574091', title: 'February 2025 Kosovan parliamentary election', date: '2025-02-09',
+    // Wikidata dates it only to 2025, so the page showed "2025".
+    sources: ['English Wikipedia\'s article (infobox and lead: 9 February 2025)',
+      'Albanian Wikipedia\'s article "Zgjedhjet parlamentare të Kosovës të shkurtit 2025" (held on 9 February 2025)']
+  },
+  // Two found by the fixer's pass of 26 November 2026, both read that day.
+  {
+    key: 'Q1246', wd: 'Q106555011', title: '2026 Kosovan presidential election', date: '2026-10-06',
+    // Wikidata dates it only to 2026, and the builder of the small corrections left it so, reading that the Assembly
+    // had sat several times without electing anyone. It did elect: the session of 5 March 2026 failed for want of a
+    // quorum, the Assembly failed again by the deadline of 28 April and was dissolved, Bekim Sejdiu's candidacy of
+    // September found too few deputies to make the quorum, and at the session of 6 October Justina Shiroka Pula was
+    // elected in the first round with 81 votes, after midnight (so her own article dates her election and term from
+    // 7 October). The vote is listed by the day its electing session sat.
+    sources: ['English Wikipedia\'s article (infobox: election_date 6 October 2026; lead: "held an indirect election for president on 6 October 2026"; revision 1387394214)',
+      'French Wikipedia\'s article "Élection présidentielle kosovare de 2026" (section "Session du 6 octobre 2026": elected in the night of 6 to 7 October 2026, in the first round, with 81 votes)']
+  },
+  {
+    key: 'Q45', wd: 'Q2105455', title: '1998 Portuguese abortion referendum', date: '1998-06-28',
+    // Wikidata's only point in time (P585) is 8 June 1998, a slip for the 28th.
+    sources: ['English Wikipedia\'s article (lead: "On 28 June 1998 a referendum on a new abortion law was conducted in Portugal")',
+      'Portugal\'s Comissão Nacional de Eleições, "Referendo Nacional 1998" (cne.pt): "Domingo, 28 Junho, 1998", on the decriminalisation of abortion in the first ten weeks']
   }
 ];
 
@@ -310,6 +361,10 @@ export const NOT_NATIONAL = [
   ['Q17', 'Q7385533', '1962 Ryukyu Islands legislative election'],
   ['Q17', 'Q60988901', '2019 Okinawan referendum'],
   ['Q17', 'Q56349476', '1996 Okinawan referendum'],
+  // Croatia: the Sabor election of Croatia-Slavonia, then a kingdom within Hungary, "held in Croatia-Slavonia in
+  // December 1911" (its English Wikipedia article, read on 26 November 2026). Wikidata dates it 17 December 2015, so
+  // the page listed it under Croatia in 2015 (small corrections, D2); it is not a vote of the state that Croatia is.
+  ['Q224', 'Q15984054', '1911 Croatian parliamentary election'],
 ];
 
 // Wikidata items the fetch takes for public votes that are not votes of the electorate at all: the confirmations of
@@ -344,6 +399,11 @@ export const NOT_VOTES = [
   ['Q783', 'Q5892959', 'Honduran fourth ballot box referendum'],
   // Romania's constitutional referendum, "scheduled to take place in Romania at the end of 2015, but was never held".
   ['Q218', 'Q15631520', '2015 Romanian constitutional referendum'],
+  // Nicaragua's general election, due in November 2026 and put back to November 2027 by an amendment; on 20 July 2026
+  // Ortega announced the abolition of the electoral system (its English Wikipedia article, and Spanish Wikipedia's
+  // "Abolición del sistema electoral de Nicaragua", read on 26 November 2026). Wikidata dated it November 2027, so the
+  // page listed a vote of 2027 under its 2026 title (small corrections, D2).
+  ['Q811', 'Q110453621', '2026 Nicaraguan general election'],
 ];
 
 const DROPPED = new Set([...NOT_NATIONAL, ...NOT_VOTES].map(([key, wd]) => `${key}|${wd}`));
@@ -427,9 +487,10 @@ export function correctElections(countries) {
     }
     const events = home.events ||= [];
     const found = events.filter(e => isVote(e) && e.url === url);
-    // A corrected date is a day: any precision the build read from Wikidata (a month, a year) goes with the old date.
-    if (found.length) for (const e of found) { e.date = fix.date; delete e.precision; }
-    else events.push({ date: fix.date, type: voteType(fix.title), text: fix.title, url });
+    // A corrected date is a day unless the entry gives its precision: any precision the build read from Wikidata (a
+    // month, a year) goes with the old date.
+    if (found.length) for (const e of found) { e.date = fix.date; if (fix.precision) e.precision = fix.precision; else delete e.precision; }
+    else events.push({ date: fix.date, type: voteType(fix.title), text: fix.title, url, ...(fix.precision ? { precision: fix.precision } : {}) });
     home.events = events.filter(e => !(isVote(e) && e.url === url && !inside(home, e.date))).sort(byDay);
   }
   return countries;

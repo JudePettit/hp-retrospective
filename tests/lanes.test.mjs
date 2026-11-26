@@ -5,7 +5,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
-import { buildModel, renderSvg, leftOut, laneOfPosition, partyOf, describe as describeTerm, DRAWN_SOURCES, LANES, MIN_BAR, pxPerYear, shortName, relationWords, barLabel, inProse, laneLabel, fitsWhole, SLOT_PATTERN, dayOf } from '../lanes.js';
+import { buildModel, renderSvg, leftOut, laneOfPosition, partyOf, describe as describeTerm, DRAWN_SOURCES, LANES, MIN_BAR, pxPerYear, shortName, relationWords, barLabel, inProse, laneLabel, fitsWhole, SLOT_PATTERN, dayOf, oneOfficeWords } from '../lanes.js';
 import { displayName } from '../names.mjs';
 
 const read = f => JSON.parse(readFileSync(new URL(`../${f}`, import.meta.url), 'utf8'));
@@ -76,8 +76,11 @@ test('where one office leads both state and government, a leader with no office 
   const d = fake([L('Ann Able', '1950-01-01', '1960-01-01'), L('Ben Bold', '1960-01-01', '1970-01-01', { position: undefined })],
     [O('hos', 'Ann Able', '1950-01-01', '1960-01-01'), O('hos', 'Ben Bold', '1960-01-01', '1970-01-01')]);
   const m = buildModel(d, 'QTEST', opts());
-  assert.deepEqual(m.lanes.government.terms.map(t => [t.full, t.kind]), [['Ann Able', 'leader'], ['Ben Bold', 'leader']]);
-  assert.deepEqual(m.lanes.state.terms.map(t => [t.full, t.kind]), [['Ann Able', 'office'], ['Ben Bold', 'office']]);
+  // The two leaders are placed as heads of government; as each is the head of state of the time, with the same dates,
+  // one lane stands for both offices and each leader's term goes with the same person's term as head of state (P1).
+  assert.ok(m.lanes.government.folded);
+  assert.deepEqual(m.lanes.state.terms.map(t => [t.full, t.kind, (t.alsoGovernment || []).map(g => [g.lane, g.kind])]),
+    [['Ann Able', 'office', [['government', 'leader']]], ['Ben Bold', 'office', [['government', 'leader']]]]);
 });
 
 test('terms that overlap stack into rows; a hand-over a day apart does not', () => {
@@ -219,6 +222,108 @@ test('short names on narrow bars', () => {
   assert.equal(shortName({ full: 'Fumio Kishida', rec: {} }, 'Q17'), null);
   assert.equal(barLabel({ full: 'Fumio Kishida', rec: {}, party: { status: 'none' } }, 60, 'Q17'), 'Fumio K…');
   assert.equal(barLabel({ full: 'Fumio Kishida', rec: {}, party: { status: 'none' } }, 60, 'Q30'), 'Kishida');
+  // A monarch's name before " of " stands, never the country after it, and a comma before the title does not cut the
+  // name (fixer, 26 November 2026).
+  assert.equal(shortName({ full: 'William Alexander of the Netherlands', rec: {} }, 'Q55'), 'William Alexander');
+  assert.equal(shortName({ full: 'Carl XVI Gustaf of Sweden', rec: {} }, 'Q34'), 'Carl XVI Gustaf');
+  assert.equal(shortName({ full: 'Guillaume V, Grand Duke of Luxembourg', rec: {} }, 'Q32'), 'Guillaume V');
+  assert.equal(shortName({ full: 'Charlotte, Grand Duchess of Luxembourg', rec: {} }, 'Q32'), 'Charlotte');
+  assert.equal(shortName({ full: 'Patriarch Miron of Romania', rec: {} }, 'Q218'), 'Miron');
+  // "Ibn Saud" is his whole name; "Saud" is his son's.
+  assert.equal(shortName({ full: 'Ibn Saud', rec: {} }, 'Q851'), 'Ibn Saud');
+  // A short name that is no run of the full name's words (Archigos's misspellings and initials) gives way to the rule
+  // on the full name.
+  assert.equal(shortName({ kind: 'leader', full: 'Neville Chamberlain', rec: { source: 'Wikidata', archigos: {}, name: 'Chamberlin' } }, 'Q145'), 'Chamberlain');
+  assert.equal(shortName({ kind: 'leader', full: 'Gaston Thorn', rec: { source: 'Wikidata', archigos: {}, name: 'Thorn G.' } }, 'Q32'), 'Thorn');
+  assert.equal(shortName({ kind: 'leader', full: 'George W. Bush', rec: { source: 'Wikidata', archigos: {}, name: 'G.W. Bush' } }, 'Q30'), 'Bush');
+  // Particles: Portugal keeps the family name before one ("Rebelo de Sousa"), even where the build gave the last word;
+  // the Netherlands keeps the last family name ("de Geer"); Irish "Ó" belongs to the name after it.
+  assert.equal(shortName({ kind: 'office', full: 'Marcelo Rebelo de Sousa', rec: { name: 'Sousa' } }, 'Q45'), 'Rebelo de Sousa');
+  assert.equal(shortName({ kind: 'office', full: 'Dirk Jan de Geer', rec: {} }, 'Q55'), 'de Geer');
+  assert.equal(shortName({ kind: 'office', full: 'Cearbhall Ó Dálaigh', rec: {} }, 'Q27'), 'Ó Dálaigh');
+});
+
+// The fixer's sweeps (26 November 2026), over every term the lanes draw: a short name is none, or a run of the full
+// name's words (commas aside), and never the country a monarch is "of".
+test('every short name drawn is a run of the full name\'s words, and none is the country after " of "', () => {
+  const bad = [];
+  for (const [key, c] of Object.entries(data.countries)) for (const t of terms(model(key))) {
+    const s = shortName(t, key);
+    if (s == null) continue;
+    const words = String(t.full).replace(/,/g, '').split(' '), sw = s.split(' ');
+    if (!words.some((_, i) => words.slice(i, i + sw.length).join(' ') === s)) bad.push(`${key} ${t.full}: ${s}`);
+    const after = String(t.full).match(/ of (?:the )?(.+)$/)?.[1];
+    if (after && s.includes(after)) bad.push(`${key} ${t.full}: ${s}`);
+    if (s === c.name || s === displayName(key, c.name, TODAY)) bad.push(`${key} ${t.full}: ${s} is the state's name`);
+  }
+  assert.deepEqual(bad, []);
+});
+
+// P2 (26 November 2026, the lanes verifier's note): "Cruz" was shown for Manuel Marrero Cruz, whose first family name
+// is Marrero; in the Spanish way the last word is the mother's family name.
+test('a Spanish double family name is never cut to the mother\'s name, and a short name keeps its accents (P2)', () => {
+  const office = (full, name) => ({ kind: 'office', full, rec: { full, name } });
+  const none = { status: 'none' };
+  // Cuba's Prime Minister, as the build holds him (an office holder, with no short name of his own).
+  assert.equal(shortName(office('Manuel Marrero Cruz'), 'Q241'), null);
+  assert.equal(barLabel({ ...office('Manuel Marrero Cruz'), party: none }, 70, 'Q241'), 'Manuel Ma…');
+  // Three names in the Spanish way may be one given name and two family names, or two and one: cut, never guessed.
+  assert.equal(shortName(office('Juan Orlando Hernández', 'Hernández'), 'Q783'), null);
+  // The build's last word for an office holder is no short name of its own (Peña Nieto, López Obrador).
+  assert.equal(shortName(office('Enrique Peña Nieto', 'Nieto'), 'Q96'), null);
+  assert.equal(shortName(office('Andrés Manuel López Obrador', 'Obrador'), 'Q96'), 'López Obrador');
+  assert.equal(shortName(office('José Luis Rodríguez Zapatero', 'Zapatero'), 'Q29'), 'Rodríguez Zapatero');
+  // Two family names joined by "i" or "y" are both given (Andorra's Co-Princes, Cuba's Céspedes).
+  assert.equal(shortName(office('Joan Martí i Alanis', 'Alanis'), 'Q228'), 'Martí i Alanis');
+  assert.equal(shortName(office('Justí Guitart i Vilardebó', 'Vilardebó'), 'Q228'), 'Guitart i Vilardebó');
+  // A given name and one family name, with its particles.
+  assert.equal(shortName(office('Felipe Calderón', 'Calderón'), 'Q96'), 'Calderón');
+  assert.equal(shortName({ kind: 'leader', full: 'Miguel de la Madrid', rec: { source: 'Wikidata', archigos: {}, name: 'de La Madrid' } }, 'Q96'), 'de la Madrid');
+  assert.equal(shortName({ kind: 'office', full: 'Éamon de Valera', rec: {} }, 'Q27'), 'de Valera');
+  // Archigos's short name stands, in the full name's spelling (it gives "Diaz Ordaz" with no accents).
+  assert.equal(shortName({ kind: 'leader', full: 'Gustavo Díaz Ordaz', rec: { source: 'Wikidata', archigos: {}, name: 'Diaz Ordaz' } }, 'Q96'), 'Díaz Ordaz');
+  assert.equal(shortName({ kind: 'leader', full: 'José María Aznar', rec: { source: 'Wikidata', archigos: {}, name: 'Aznar' } }, 'Q29'), 'Aznar');
+  assert.equal(shortName({ kind: 'leader', full: 'Eisaku Satō', rec: { source: 'Wikidata', archigos: {}, name: 'Sato' } }, 'Q17'), 'Satō');
+  // In Portugal the father's family name comes last, so the last word stands; a king is named as a king.
+  assert.equal(shortName(office('António de Oliveira Salazar', 'Salazar'), 'Q45'), 'Salazar');
+  assert.equal(shortName(office('Juan Carlos I of Spain', 'Spain'), 'Q29'), 'Juan Carlos I');
+  // In the data as built: no office holder of a Spanish-named state is shortened to his or her last word alone where
+  // the name has three or more parts.
+  for (const key of ['Q29', 'Q228', 'Q96', 'Q241', 'Q786', 'Q774', 'Q783', 'Q792', 'Q811', 'Q800', 'Q804']) {
+    if (!data.countries[key]) continue;
+    for (const t of terms(model(key))) {
+      const w = t.full.split(' ').filter(x => !/^(de|del|la|las|los|y|i)$/.test(x));
+      if (t.kind !== 'office' || w.length < 3 || /^[IVX]+$/.test(w.at(-1)) || / of /.test(t.full)) continue;
+      assert.notEqual(shortName(t, key), w.at(-1), `${data.countries[key].name}: ${t.full}`);
+    }
+  }
+  const cuba = terms(model('Q241')).find(t => t.full === 'Manuel Marrero Cruz');
+  if (cuba) assert.notEqual(shortName(cuba, 'Q241'), 'Cruz');
+  // Nor any leader drawn (Archigos's "Melgar", "Oduber", "Ydígoras" and the rest were the mother's or one of two family
+  // names until the fixer's pass, 26 November 2026), except these nine, whose last word is the family name each is
+  // known by, as his English Wikipedia article gives it (read that day; the leads give Elías Calles, Abelardo L. Rodríguez,
+  // Reina Idiáquez, Hernández Alvarado, Molina Barraza, Duarte Fuentes, Moncada Tapia, Monge Álvarez and Rodríguez
+  // Echeverría in full, and call each by the name drawn).
+  const ONE_NAME = new Set(['Plutarco Elías Calles', 'Abelardo L. Rodríguez', 'Carlos Roberto Reina', 'Juan Orlando Hernández', 'Arturo Armando Molina',
+    'José Napoleón Duarte', 'José María Moncada', 'Luis Alberto Monge', 'Miguel Ángel Rodríguez']);
+  const last = [];
+  for (const key of ['Q29', 'Q228', 'Q96', 'Q241', 'Q786', 'Q774', 'Q783', 'Q792', 'Q811', 'Q800', 'Q804']) {
+    if (!data.countries[key]) continue;
+    for (const t of terms(model(key))) {
+      const w = t.full.split(' ').filter(x => !/^(de|del|la|las|los|y|i)$/.test(x));
+      if (w.length < 3 || /^[IVX]+$/.test(w.at(-1)) || / of /.test(t.full) || ONE_NAME.has(t.full)) continue;
+      if (shortName(t, key) === w.at(-1)) last.push(`${data.countries[key].name}: ${t.full}`);
+    }
+  }
+  assert.deepEqual([...new Set(last)], []);
+  // The bars the fixer's second readers named, as drawn.
+  const drawn = (key, full) => terms(model(key)).filter(t => t.full === full).map(t => shortName(t, key));
+  for (const [key, full, s] of [['Q783', 'Juan Alberto Melgar Castro', 'Melgar Castro'], ['Q800', 'Daniel Oduber Quirós', 'Oduber Quirós'],
+    ['Q786', 'Salvador Jorge Blanco', 'Jorge Blanco'], ['Q774', 'Miguel Ydígoras Fuentes', 'Ydígoras Fuentes'], ['Q804', 'Daniel Chanis Pinzón', 'Chanis Pinzón'],
+    ['Q241', 'Carlos Prío Socarrás', 'Prío Socarrás'], ['Q774', 'Álvaro Arzú', 'Arzú'], ['Q783', 'José Azcona del Hoyo', 'Azcona del Hoyo']]) {
+    const got = drawn(key, full);
+    assert.ok(got.length && got.every(x => x === s), `${full}: ${got.join(', ')}`);
+  }
 });
 
 test('a bar names its party where the name and party both fit, else the name alone', () => {
@@ -304,15 +409,93 @@ test('parties: "independent politician" is no party, and a membership a later on
 });
 
 test('a lane names its years with no term drawn, and a lane that holds the same people as the other', () => {
-  const sa = model('Q851');
-  assert.equal(sa.lanes.government.samePeople, true);
-  assert.match(laneLabel(sa.lanes.government, 'government'), /; the same people as head of state; none drawn for 1926–1932$/);
+  // The same people, where a head of government's term runs well past the same person's as head of state, so the
+  // lane is drawn and says so (where the terms match, the lane is folded: the test after this one).
+  const sp = buildModel(fake([], [O('hos', 'A One', '1926-01-01', '1950-01-01'), O('hos', 'B Two', '1950-01-01', null), O('hog', 'A One', '1940-01-01', '1952-01-01')]), 'QTEST', opts());
+  assert.equal(sp.lanes.government.samePeople, true);
+  assert.equal(sp.lanes.government.folded, null);
+  assert.match(laneLabel(sp.lanes.government, 'government'), /; the same people as head of state; none drawn for 1926–1939, 1952–2026$/);
   assert.equal(model('Q145').lanes.government.samePeople, false);
   const m = buildModel(fake([], [O('hos', 'A One', '1926-01-01', '1950-01-01'), O('hos', 'B Two', '1950-02-15', null)]), 'QTEST', opts());
   assert.deepEqual(m.lanes.state.holes, [], 'a gap of six weeks is a hand-over');
   const n = buildModel(fake([], [O('hos', 'A One', '1926-01-01', '1950-01-01'), O('hos', 'B Two', '1951-01-01', null)]), 'QTEST', opts());
   assert.equal(n.lanes.state.holes.length, 1);
   assert.match(renderSvg(n, { px: 4, shown: { a: 1990, b: 1990, ref: '1990-12-31' } }).svg, /<rect class="lane-hole" data-lane="state"/);
+});
+
+// The fixer's pass (26 November 2026): Ireland's head of state's lane was hatched from 1926 to 2025, as Wikidata's head
+// of state (P35) names only Catherine Connolly; the kings and the presidents before her are added from VM's list
+// (scripts/leader-corrections.mjs, REIGNS), so no stretch of the lane is left with no term drawn.
+test('Ireland: the kings to 1949 and the presidents from 1938 fill the head of state\'s lane', () => {
+  const m = model('Q27');
+  assert.deepEqual(m.lanes.state.holes, []);
+  const st = m.lanes.state.terms;
+  for (const [full, start] of [['George V', '1922-12-06'], ['Edward VIII', '1936-01-20'], ['George VI', '1936-12-12'], ['Douglas Hyde', '1938-06-25'], ['Michael D. Higgins', '2011-11-11']]) {
+    assert.ok(st.some(t => t.full === full && t.start === start), `${full} from ${start}`);
+  }
+  // George VI and the President overlap from 1938 to 1949, in two rows.
+  const g6 = st.find(t => t.full === 'George VI'), hyde = st.find(t => t.full === 'Douglas Hyde');
+  assert.notEqual(g6.row, hyde.row);
+});
+
+// P1 (26 November 2026, the lanes verifier's note): Mexico's head of government's lane read "same people as head of
+// state" over hatching from 1926 to 2024, as Wikidata names a head of government only from 2024, the President.
+test('one person in both offices: no second lane of hatching, the words say so, and each term keeps its dates as head of government (P1)', () => {
+  const c = fake([], [O('hos', 'A One', '1926-01-01', '1990-01-01'), O('hos', 'B Two', '1990-01-01', null), O('hog', 'B Two', '2020-03-01', null)]);
+  const m = buildModel(c, 'QTEST', opts());
+  assert.ok(m.lanes.government.folded, 'folded');
+  assert.equal(m.lanes.government.terms.length, 0);
+  assert.deepEqual(m.lanes.government.holes, []);
+  const b = m.lanes.state.terms.find(t => t.full === 'B Two');
+  assert.equal(b.alsoGovernment.length, 1);
+  assert.equal(b.alsoGovernment[0].start, '2020-03-01');
+  assert.match(describeTerm(b), /^Head of state and of government: B Two, 1 Jan 1990 to the present/);
+  assert.match(describeTerm(m.lanes.state.terms.find(t => t.full === 'A One')), /^Head of state: A One/);
+  assert.equal(oneOfficeWords(m, 'Testland'), 'One lane stands for both offices: the only head of government Wikidata records for Testland (from 2020) is the same person as the head of state of the time.');
+  assert.match(laneLabel(m.lanes.state, 'state'), /so this lane stands for both offices/);
+  const { svg, laneLabels } = renderSvg(m, { px: 4, shown: { a: 2021, b: 2021, ref: '2021-12-31' } });
+  assert.equal([...svg.matchAll(/role="list"/g)].length, 1);
+  assert.doesNotMatch(svg, /data-lane="government"/);
+  assert.deepEqual(laneLabels.map(l => l.lane), ['state']);
+  // Someone else as head of government: two lanes, as before.
+  const two = buildModel(fake([], [O('hos', 'A One', '1926-01-01', null), O('hog', 'C Three', '2020-03-01', null)]), 'QTEST', opts());
+  assert.equal(two.lanes.government.folded, null);
+  assert.equal(oneOfficeWords(two, 'Testland'), '');
+  assert.equal([...renderSvg(two, { px: 4, shown: { a: 2021, b: 2021, ref: '2021-12-31' } }).svg.matchAll(/role="list"/g)].length, 2);
+  // In the data: Mexico (Wikidata's head of government from 2024 is its President), Cyprus and the Dominican Republic
+  // are drawn in one lane; the United Kingdom, with Prime Ministers, in two; and Saudi Arabia in two, as its Prime
+  // Minister has been Mohammed bin Salman, not the King, since 27 September 2022, and was Faisal, not King Saud, in
+  // 1954-60 and from 1962 (VM's list, the fixer's pass of 26 November 2026; until then Wikidata's kings filled both).
+  for (const key of ['Q96', 'Q229', 'Q786']) {
+    const x = model(key);
+    assert.ok(x.lanes.government.folded, data.countries[key].name);
+    assert.deepEqual(x.lanes.government.holes, []);
+    assert.ok(x.lanes.state.terms.some(t => t.alsoGovernment?.length), data.countries[key].name);
+    assert.doesNotMatch(renderSvg(x, { px: 4, shown: { a: 2025, b: 2025, ref: '2025-12-31' } }).svg, /data-lane="government"/);
+  }
+  assert.match(oneOfficeWords(model('Q96'), 'Mexico'), /^One lane stands for both offices: (the only|every) head of government Wikidata records for Mexico \(from \d{4}\) is the same person as the head of state of the time\.$/);
+  assert.equal(model('Q145').lanes.government.folded, null);
+  const sa = model('Q851');
+  assert.equal(sa.lanes.government.folded, null);
+  assert.deepEqual(sa.lanes.government.terms.filter(t => t.start >= '2022-01-01').map(t => [t.full, t.start, t.open]), [['Mohammed bin Salman', '2022-09-27', true]]);
+  assert.deepEqual(sa.lanes.government.terms.filter(t => /Faisal/.test(t.full)).map(t => [t.start, t.end]), [['1954-08-16', '1960-12-21'], ['1962-10-31', '1975-03-25']]);
+  // The office dates from 9 October 1953: no head of government is drawn before it, and the lane says so.
+  assert.ok(sa.lanes.government.terms.every(t => t.start >= '1953-10-09'));
+  assert.match(laneLabel(sa.lanes.government, 'government'), /none drawn for 1926–1953/);
+});
+
+// P3 (26 November 2026): HANDOFF.md said nothing of the lanes; README.md named the wrong lane for the United States.
+test('HANDOFF.md and README.md name the lanes\' files, and README\'s example of a lane with none drawn is the lane the model gives', () => {
+  const text = f => readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');
+  const handoff = text('HANDOFF.md'), readme = text('README.md');
+  for (const f of ['lanes.js', 'data/succession.json', 'scripts/wikidata-succession.mjs', 'tests/lanes.test.mjs', 'tests/succession.test.mjs', 'npm run build-succession']) {
+    assert.ok(handoff.includes(`\`${f}\``), `HANDOFF.md names ${f}`);
+    assert.ok(readme.includes(`\`${f}\``), `README.md names ${f}`);
+  }
+  const m = model('Q30');
+  const lane = LANES.find(l => laneLabel(m.lanes[l], l).includes('none drawn for 1989–1993'));
+  assert.ok(lane, 'a lane of the United States has none drawn for 1989–1993');
+  assert.ok(readme.includes(`the United States' head of ${lane}, "none drawn for 1989–1993"`), `README names the ${lane} lane`);
 });
 
 test('short bars are painted over the long ones, and the list keeps date order; San Marino draws in under 100 ms', () => {
@@ -471,13 +654,21 @@ pageTest('each bar is reached by keyboard in date order, shows a focus ring, and
 
 pageTest('a term\'s source is its own record: VM\'s own list in Monaco, Wikidata\'s head of state (P35) in the United Kingdom', async () => {
   const mc = await open('#y=2025&c=Q235');
-  assert.match(await detailOf(mc, 'Head of government: Christophe Mirmand'), /Source: VM’s own list, each entry read from at least two of Wikidata, Wikipedia’s lists of office holders and rulers\.org\./);
+  assert.match(await detailOf(mc, 'Head of government: Christophe Mirmand'), /Source: VM’s own list, each entry read from at least two of Wikidata, Wikipedia’s lists of office holders and rulers\.org \(B\. Schemmel\)\./);
   assert.match(await mc.textContent('#lanes-source'), /and from VM’s own list/);
   await close(mc);
   const uk = await open('#y=1990&c=Q145');
   assert.match(await detailOf(uk, 'Head of state: Elizabeth II'), /Source: Wikidata \(CC0\): the state’s head of state \(P35\)\./);
   assert.doesNotMatch(await uk.textContent('#lanes-source'), /VM’s own list/);
   await close(uk);
+  // George V is one of the heads of state Wikidata's P35 leaves out: his term names VM's list and his "position held"
+  // (P39), never P35 as its source (fixer, 26 November 2026), and the note under the lanes says such terms are added.
+  const g5 = await open('#y=1930&c=Q145');
+  const d = await detailOf(g5, 'Head of state: George V');
+  assert.doesNotMatch(d, /Source: Wikidata \(CC0\): the state’s head of state \(P35\)/);
+  assert.match(d, /Source: VM’s list of heads of state that Wikidata’s head of state \(P35\) leaves out \(scripts\/leader-corrections\.mjs\): the person’s “position held” \(P39\)/);
+  assert.match(await g5.textContent('#lanes-source'), /heads of state that Wikidata’s head of state \(P35\) leaves out, added in scripts\/leader-corrections\.mjs/);
+  await close(g5);
 });
 
 pageTest('Andorra: a Co-Prince\'s term does not name the other Co-Prince as the previous holder', async () => {
@@ -494,11 +685,17 @@ pageTest('the page says how many leaders are left out, counted from the data, fo
   const text = (await page.textContent('#lanes-left-out')).replace(/\s+/g, ' ');
   assert.ok(text.startsWith(`Archigos 4.1, whose page states no licence for reuse, gives the names and dates of ${n0(c.here)} of the ${n0(c.hereTotal)} leaders in VM’s list for Saudi Arabia, so those records are not drawn (${n0(c.all)} of the ${n0(c.allTotal)} leaders in VM’s lists in all).`), text);
   assert.match(text, /in the lanes anyway, from Wikidata’s own list of the office|stay in the list|only in the list/);
-  // The head of government's lane holds the same people as the head of state's, and says so.
-  assert.match(await page.getAttribute('#lanes [role="list"][data-lane="government"]', 'aria-label'), /; the same people as head of state/);
-  assert.match(await page.textContent('.lanes-names'), /Head of government · same people as head of state/);
+  // Two lanes, as the head of government was not always the King (VM's list, the fixer's pass of 26 November 2026):
+  // Mohammed bin Salman in the government lane from 2022, with VM's list named as the source.
+  assert.equal(await page.locator('#lanes [role="list"]').count(), 2);
+  assert.equal(await page.locator('#lanes-one-office').count(), 0);
+  assert.doesNotMatch(await page.getAttribute('#lanes [role="list"][data-lane="state"]', 'aria-label'), /stands for both offices/);
+  const mbs = await detailOf(page, 'Head of government: Mohammed bin Salman');
+  assert.match(mbs, /27 Sept? 2022 to the present/);
+  assert.match(mbs, /Source: VM’s list \(scripts\/leader-corrections\.mjs\): English Wikipedia’s list “Prime Minister of Saudi Arabia”/);
+  assert.match(await page.textContent('#lanes-source'), /terms put right in scripts\/leader-corrections\.mjs/);
   await close(page);
-  // At phone width that longer lane name stays inside the frame, and the page does not scroll sideways.
+  // At phone width the lane names stay inside the frame, and the page does not scroll sideways.
   const phone = await open('#y=1990&c=Q851', { viewport: { width: 375, height: 800 } });
   assert.ok(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no sideways scroll on the page');
   assert.ok(await phone.evaluate(() => [...document.querySelectorAll('.lanes-names span')].every(s => s.getBoundingClientRect().right <= document.querySelector('.lanes-frame').getBoundingClientRect().right + 0.5)));
@@ -605,6 +802,40 @@ pageTest('at 1366 px the United States\' lanes open where a name fits on the bar
   for (const lane of LANES) {
     const names = await page.$$eval(`#lanes .lane[data-lane="${lane}"] .lane-text`, els => els.map(e => e.textContent).filter(Boolean));
     assert.ok(names.length >= 1, `${lane}: ${names.length} names`);
+  }
+  await close(page);
+});
+
+pageTest('Mexico: one lane for both offices, no hatched lane, the words under it, and the head of government\'s dates in the term (P1)', async () => {
+  for (const viewport of [{ width: 1440, height: 1000 }, { width: 375, height: 800 }]) {
+    const page = await open('#y=2025&c=Q96', { viewport });
+    assert.equal(await page.locator('#lanes [role="list"]').count(), 1);
+    assert.equal(await page.locator('#lanes [data-lane="government"]').count(), 0, 'no lane and no hatching for the head of government');
+    assert.doesNotMatch(await page.textContent('.lanes-names'), /Head of government/);
+    const words = await page.textContent('#lanes-one-office');
+    assert.match(words, /^One lane stands for both offices: (the only|every) head of government Wikidata records for Mexico \(from \d{4}\) is the same person as the head of state of the time\.$/);
+    // The words come after the lanes and before the key.
+    assert.ok(await page.evaluate(() => !!(document.querySelector('.lanes-frame').compareDocumentPosition(document.querySelector('#lanes-one-office')) & Node.DOCUMENT_POSITION_FOLLOWING)
+      && !!(document.querySelector('#lanes-one-office').compareDocumentPosition(document.querySelector('#lanes-key')) & Node.DOCUMENT_POSITION_FOLLOWING)));
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no sideways scroll on the page');
+    const d = await detailOf(page, 'Head of state and of government: Claudia Sheinbaum');
+    assert.match(d, /Head of state and of government/);
+    assert.match(d, /As head of government: \d{1,2} \w+ 2024 to the present \(still in office\); source: Wikidata \(CC0\)/);
+    await close(page);
+  }
+  // The United Kingdom keeps its two lanes.
+  const uk = await open('#y=1990&c=Q145');
+  assert.equal(await uk.locator('#lanes [role="list"]').count(), 2);
+  assert.equal(await uk.locator('#lanes-one-office').count(), 0);
+  await close(uk);
+});
+
+pageTest('Cuba: Manuel Marrero Cruz\'s bar is never labelled "Cruz", his mother\'s family name (P2)', async () => {
+  const page = await open('#y=2025&c=Q241', { viewport: { width: 375, height: 800 } });
+  for (const closer of [true, false]) {
+    await view(page, closer);
+    const names = await page.$$eval('#lanes .lane-text', els => els.map(e => e.textContent));
+    assert.ok(!names.includes('Cruz'), names.join(' | '));
   }
   await close(page);
 });

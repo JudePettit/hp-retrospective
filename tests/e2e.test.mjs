@@ -1207,7 +1207,7 @@ test('the footer says which election dates are corrected, from each election\'s 
   const { ELECTIONS } = await import('../scripts/election-corrections.mjs');
   await open('');
   const line = (await page.textContent('#election-corrections')).replace(/\s+/g, ' ').trim();
-  const words = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen', 'Twenty'];
+  const words = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen', 'Twenty', 'Twenty-one', 'Twenty-two', 'Twenty-three', 'Twenty-four', 'Twenty-five'];
   // "This site's copy of Wikidata", not "Wikidata": Grenada 2026 was wrong only in the build's cached fetch (Wikidata
   // itself now gives 5 November 2026), and Grenada 1967 and 2003 have Wikidata's right date under a wrong country.
   // "Votes" since 25 November 2026, when three independence referendums joined the list.
@@ -1397,7 +1397,8 @@ test('Bulgaria\'s Prime Minister of 2001 is Simeon Sakskoburggotski, linked to h
 test('no arrival names a leader by a Wikidata id', () => {
   const countries = retro();
   for (const [key, c] of Object.entries(countries)) for (const e of c.events) assert.doesNotMatch(e.text, /\bQ\d+ takes power/, `${key} ${e.date}`);
-  assert.ok(countries.Q96.events.some(e => e.date === '2024-09-30' && e.text === 'Claudia Sheinbaum takes power'));
+  // She took office on 1 October 2024 (small corrections, D1, 26 November 2026; until then 30 September).
+  assert.ok(countries.Q96.events.some(e => e.date === '2024-10-01' && e.text === 'Claudia Sheinbaum takes power'));
   assert.ok(countries.Q145.events.some(e => e.date === '2022-10-25' && e.text === 'Rishi Sunak takes power'));
 });
 

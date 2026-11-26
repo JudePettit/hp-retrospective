@@ -59,7 +59,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { COUNTRIES } from './countries.mjs';
 import { LISTS } from './leader-lists.mjs';
-import { CORRECTIONS } from './leader-corrections.mjs';
+import { CORRECTIONS, spellNames } from './leader-corrections.mjs';
 import { byDay } from './retro-shape.mjs';
 
 const UA = 'JDP-I H&P Retrospective data build (https://jdpi.pages.dev)';
@@ -363,6 +363,9 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
   const fetched = await fetchAll(data.countries);
   const { rows, taken, gaps } = match(data.countries, fetched);
   apply(data.countries, taken);
+  // The names this step gives (the article's title) are spelt as leader-corrections.mjs spells them: a short name that
+  // is the full name's last words, accents aside, takes their accents (small corrections, D6, 26 November 2026).
+  for (const c of Object.values(data.countries)) spellNames(c);
   const at = process.argv.indexOf('--report');
   const dir = at > 0 ? process.argv[at + 1] : process.env.LEADERS_REPORT;
   if (dir) {

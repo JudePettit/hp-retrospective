@@ -176,9 +176,14 @@ function extendLeaders(archigos, offices) {
     const off = offices[key] || [];
     if (!last) continue;
     // Which office did Archigos use? Match the 2015 leader's surname against both offices.
-    const surname = last.name.toLowerCase().split(/[\s-]+/).at(-1);
+    // The holder's name and article title are both read, accents aside: Wikidata's label service may give an item's
+    // number for its label, and Mexico's "Enrique Peña Nieto" came back as a number, so "Pena Nieto" matched no office,
+    // the head of government's was taken and López Obrador was missed (small corrections, D1, 26 November 2026).
+    const plain = s => (s || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+    const article = o => { try { return decodeURIComponent((o.url || '').split('/wiki/')[1] || '').replace(/_/g, ' '); } catch { return ''; } };
+    const surname = plain(last.name).split(/[\s-]+/).at(-1);
     const holder = o => o.start <= CUTOFF && (!o.end || o.end >= CUTOFF);
-    const match = off.find(o => holder(o) && o.full?.toLowerCase().includes(surname));
+    const match = off.find(o => holder(o) && `${plain(o.full)} ${plain(article(o))}`.includes(surname));
     const office = match?.office || 'hog';
     if (!last.full && match) { last.full = match.full; last.url = match.url; }
     last.end = null;

@@ -62,7 +62,10 @@ test('every id in a link belongs to a leader or office holder of that state in d
 
 test('the later holder of each link followed the earlier one in that office', () => {
   for (const l of succession.links) {
-    const from = recordsOf(l.country).find(r => (r.qid === l.from || r.url === l.fromUrl) && r.start === l.fromStart);
+    // The earlier holder's record in the link's own office where there is one: Salman became King and Prime Minister
+    // on one day, and only the second term has ended (fixer, 26 November 2026).
+    const recs = recordsOf(l.country).filter(r => (r.qid === l.from || r.url === l.fromUrl) && r.start === l.fromStart);
+    const from = recs.find(r => r.office === (l.office === 'state' ? 'hos' : 'hog')) || recs[0];
     assert.ok(l.toStart > l.fromStart, `${l.toName} starts after ${l.fromName}`);
     assert.ok(from.end, `${l.fromName}'s term from ${l.fromStart} has ended`);
     assert.ok(day(l.toStart) >= day(from.end) - 31, `${l.toName} (${l.toStart}) starts no earlier than 31 days before ${l.fromName} leaves (${from.end})`);
@@ -71,10 +74,13 @@ test('the later holder of each link followed the earlier one in that office', ()
 });
 
 // Each of these was read on Wikidata on 25 November 2026 from both items (Special:EntityData), both ways: the later
-// holder's father (P22) or mother (P25) or sibling (P3373), and the earlier's child (P40) or sibling. Akihito, the son of
-// Hirohito, is not here: Wikidata's head of state of Japan (P35, which data/countries.json holds) starts with Akihito, so
-// Hirohito holds no office of Japan in the data and the lanes cannot draw that succession.
+// holder's father (P22) or mother (P25) or sibling (P3373), and the earlier's child (P40) or sibling. Wikidata's head of
+// state of Japan (P35) starts with Akihito and gives George V on the United Kingdom no start, so until 26 November 2026
+// neither Hirohito nor George V held an office in the data; leader-corrections.mjs now adds their reigns (REIGNS), and
+// the links to their sons are drawn (small corrections, D7; the two links read from the build's query that day).
 const KNOWN = [
+  ['Q17', 'state', 'Q34479', 'Q37979', 'son', 'Akihito is the son of Hirohito'],
+  ['Q145', 'state', 'Q269412', 'Q590227', 'son', 'Edward VIII is the son of George V'],
   ['Q145', 'state', 'Q280856', 'Q9682', 'daughter', 'Elizabeth II is the daughter of George VI'],
   ['Q145', 'state', 'Q9682', 'Q43274', 'son', 'Charles III is the son of Elizabeth II'],
   ['Q145', 'state', 'Q590227', 'Q280856', 'brother', 'George VI is the brother of Edward VIII'],
@@ -131,8 +137,8 @@ test('who follows whom: the next holder, a regent passed over, and the same term
   const s = successions(regency, x => /regent/i.test(x.position || ''));
   assert.ok(s.some(x => x.from.qid === 'Qk' && x.to.qid === 'Qs' && x.between.qid === 'Qr'));
   assert.ok(!successions(regency, () => false).some(x => x.from.qid === 'Qk' && x.to.qid === 'Qs'));
-  // Norway, 1998: the list's "Erik Lahnstein" (30 August to 23 September) beside Anne Enger's acting term (31 August to
-  // 24 September) is the same term under another name, not a succession.
+  // Norway, 1998: Archigos's "Lahnstein" (30 August to 23 September; linked until 26 November 2026 to Erik Lahnstein)
+  // beside Anne Enger's acting term (31 August to 24 September) is the same term under another name, not a succession.
   const norway = [t('Qbondevik', '1997-10-17', '1998-08-30'), t('Qerik', '1998-08-30', '1998-09-23'), t('Qanne', '1998-08-31', '1998-09-24'), t('Qbondevik2', '1998-09-24', '2000-03-17')];
   assert.deepEqual(nextOf(norway, 1).map(x => x.qid), ['Qbondevik2']);
   // A term still open has no successor.

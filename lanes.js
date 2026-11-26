@@ -153,7 +153,7 @@ export function relationWords(r, { short = false } = {}) {
 }
 // A tenure in words, for its bar's accessible name: "Head of state: <name>, <from> to <to>, <party or 'party not dated'>".
 export function describe(t) {
-  return `${LANE_NAME[t.lane]}: ${t.full}, ${termWords(t)}${t.role ? `, ${t.role}` : ''}, ${partyWords(t.party)}${t.relation ? `; ${relationWords(t.relation)}` : ''}`;
+  return `${t.alsoGovernment ? 'Head of state and of government' : LANE_NAME[t.lane]}: ${t.full}, ${termWords(t)}${t.role ? `, ${t.role}` : ''}, ${partyWords(t.party)}${t.relation ? `; ${relationWords(t.relation)}` : ''}`;
 }
 
 /* ------------------------------------------------------------------ the model */
@@ -298,6 +298,32 @@ export function buildModel(c, key, { firstYear, lastYear, today, links = [] }) {
     out.push({ ...t, s, e, ds, de, softStart: fadeIn > 0 && ds === s, softEnd: fadeOut > 0 && de === e, fadeIn, fadeOut, open: !t.end && !t.noEnd, cutStart: ds > s, cutEnd: de < e });
   }
 
+  // One person in both offices. Where every head of government drawn is the head of state of the time, within 31 days
+  // at each end of the same person's term in the head of state's lane (Mexico, whose head of government in Wikidata is
+  // Claudia Sheinbaum, from 2024, as she is its head of state; Cyprus; the Dominican Republic; until the fixer's pass of
+  // 26 November 2026 Saudi Arabia, whose heads of government Wikidata gave as its kings),
+  // a second lane would repeat the first and show only hatching for the years Wikidata names no head of government.
+  // So no second lane is drawn: each such term goes with the same person's term as head of state (`alsoGovernment`,
+  // with its own dates and record), and the page says in words that one lane stands for both offices, and for which
+  // years Wikidata records a head of government (oneOfficeWords).
+  const stOut = out.filter(t => t.lane === 'state'), govOut = out.filter(t => t.lane === 'government');
+  const twinsOf = g => stOut.filter(s => samePerson(s, g) && overlaps(g.ds, g.de, s.ds, s.de));
+  const within = g => { const ts = twinsOf(g); return ts.length > 0 && Math.min(...ts.map(s => s.ds)) <= g.ds + WINDOW && Math.max(...ts.map(s => s.de)) >= g.de - WINDOW; };
+  const oneOffice = govOut.length > 0 && govOut.every(within);
+  let foldedCover = [];
+  if (oneOffice) {
+    for (const g of govOut) {
+      const twin = twinsOf(g).sort((p, q) => daysOverlap(g.ds, g.de, q.ds, q.de) - daysOverlap(g.ds, g.de, p.ds, p.de))[0];
+      (twin.alsoGovernment ||= []).push(g);
+    }
+    // The stretches the heads of government cover, a hand-over of up to 60 days joined, for the words on the page.
+    for (const [p, q] of govOut.map(g => [g.ds, g.de]).sort((x, y) => x[0] - y[0])) {
+      const last = foldedCover.at(-1);
+      if (last && p <= last[1] + HOLE_DAYS) last[1] = Math.max(last[1], q); else foldedCover.push([p, q]);
+    }
+    out.splice(0, out.length, ...out.filter(t => t.lane !== 'government'));
+  }
+
   // Order, rows and ids, lane by lane.
   const lanes = {};
   for (const lane of LANES) {
@@ -405,10 +431,15 @@ export function buildModel(c, key, { firstYear, lastYear, today, links = [] }) {
     lanes[lane].holes = holes.filter(([p, q]) => q - p > HOLE_DAYS);
   }
   // Where every term drawn in the head of government's lane is a term of the same person in the head of state's
-  // (the United States from 1981, Saudi Arabia), the lane says so.
+  // (the United States from 1981), the lane says so.
   const st = lanes.state.terms, gov = lanes.government.terms;
   lanes.government.samePeople = gov.length > 0 && st.length > 0 && gov.every(g => st.some(s => samePerson(s, g) && overlaps(g.ds, g.de, s.ds, s.de)));
   lanes.state.samePeople = false;
+  // Folded into the head of state's lane (above): no lane, no hatching; `cover` is the stretches Wikidata names a head
+  // of government for, each [first day, day after the last], the last open where it runs to today.
+  lanes.government.folded = oneOffice ? { cover: foldedCover, count: govOut.length } : null;
+  lanes.state.alsoGovernment = oneOffice;
+  if (oneOffice) lanes.government.holes = [];
   return { key, from, to, a0, a1: axisEnd, today: dayOf(today), lanes, parties, unplaced, gaps: gaps.filter(([p, q]) => q > p), listed, drawn: out.length };
 }
 function nextMonth(d) {
@@ -442,21 +473,80 @@ const textWidth = (s, size = 11) => String(s).length * size * 0.56;
 // not fit is cut short rather than guessed.
 const FAMILY_FIRST = new Set(['Q13426199']);
 const ORDER_VARIES = new Set(['Q17']);
+// States whose people carry two family names in the Spanish way, the father's and then the mother's (Catalan in
+// Andorra the same): Spain, Andorra, Mexico, Cuba, the Dominican Republic and the six Central American states
+// (Guatemala, Honduras, El Salvador, Nicaragua, Costa Rica, Panama). There the last word is the mother's family name
+// ("Cruz" of Manuel Marrero Cruz, "Nieto" of Enrique Peña Nieto), so it is never the short name. (In Portugal the
+// father's family name comes last, so the last word stands.)
+const TWO_SURNAMES = new Set(['Q29', 'Q228', 'Q96', 'Q241', 'Q786', 'Q774', 'Q783', 'Q792', 'Q811', 'Q800', 'Q804']);
+// Words that belong to the family name after them ("de la Madrid", "de Gaulle", "de Valera", "Salinas de Gortari").
+// Irish "Ó" and "Ní" the same ("Ó Dálaigh", fixer, 26 November 2026).
+const PARTICLE = /^(de|del|della|di|da|das|do|dos|du|la|las|los|y|i|Ó|Ní)$/;
+// Portugal, where a family name with a particle follows another family name ("Rebelo de Sousa", "Gomes da Costa"). In
+// the Netherlands the same shape is as often given names and one family name ("Dirk Jan de Geer", "Jan Eduard de
+// Quay"), so there the last family name stands ("de Geer").
+const COMPOUND_PARTICLE = new Set(['Q45']);
+function nameParts(words) {
+  const out = [];
+  let pre = [];
+  for (const w of words) {
+    if (PARTICLE.test(w) && out.length) { pre.push(w); continue; }
+    out.push([...pre, w].join(' '));
+    pre = [];
+  }
+  if (pre.length) out.push(pre.join(' '));
+  return out;
+}
+// The record's own short name in the full name's spelling, where the full name holds it with the accents a source
+// left out ("Díaz Ordaz" for Archigos's "Diaz Ordaz", "López Portillo" for "Lopez Portillo"); null where no run of the
+// full name's words is the short name, as with Archigos's misspellings and initials ("Chamberlin", "Thorn G.",
+// "G.W. Bush"), so that the rule on the full name decides (fixer, 26 November 2026; until then the bar showed them).
+function spelt(own, full) {
+  const plain = s => norm(s).replace(/[-‐]/g, ' ');
+  const words = full.replace(/,/g, '').split(' '), want = plain(own);
+  for (let i = 0; i < words.length; i++) for (let j = i + 1; j <= words.length; j++) if (plain(words.slice(i, j).join(' ')) === want) return words.slice(i, j).join(' ');
+  return null;
+}
 // A shorter name for a narrow bar: the record's own short name (the family name, "Saito" for Archigos's "Saito, M."),
 // "Saud" for "Saud of Saudi Arabia", "Fahd" for "Fahd bin Abdulaziz Al Saud", a monarch's whole name ("Elizabeth II"),
-// the first word where the family name comes first ("Mao" for Mao Zedong), else the last word; null where the order
-// is not known (a name in Japan with no short name of its own).
+// the first word where the family name comes first ("Mao" for Mao Zedong), both family names where they are two in the
+// Spanish way ("López Obrador"), else the last word with its particles ("de Valera"); null where the order is not
+// known (a name in Japan with no short name of its own; three names in the Spanish way, which may be one given name
+// and two family names, "Manuel Marrero Cruz", or two given names and one, "Luis Alberto Monge"), so that the name is
+// cut short rather than guessed. Two family names joined by "y" or "i" are both given ("Martí i Alanis"). Where the
+// family names are two in the Spanish way, a record's short name that is only the full name's last word is no source of
+// its own when the build made it: it gives an office holder, and a leader Wikidata alone holds, its last word
+// (scripts/build-data.mjs), so the rule here decides; Archigos's and VM's own lists' short names stand, where the full
+// name holds them. A monarch's name before " of " is the short name, never the country after it ("William Alexander"
+// of the Netherlands, "Guillaume V" for "Guillaume V, Grand Duke of Luxembourg"), and "Ibn Saud" is his whole name,
+// not "Saud", his son's (fixer, 26 November 2026). In Portugal a family name with a particle keeps the family name
+// before it ("Rebelo de Sousa"); a name of two parts keeps its particle alone ("de Gaulle").
+const GIVEN_BY_BUILD = t => t.kind === 'office' || (t.rec?.source === 'Wikidata' && !t.rec.archigos);
 export function shortName(t, key = null) {
-  if (t.rec?.name && t.rec.name !== t.full) return t.rec.name.replace(/,.*$/, '');
-  const full = String(t.full || '').replace(/^(King|Queen|Emperor|Empress|Prince|Princess|Sultan|Emir|Sheikh) /, '');
-  const of = full.match(/^(\S+(?: [IVX]+)?) of /);
-  if (of) return of[1];
+  const whole = String(t.full || '');
+  const own = t.rec?.name && t.rec.name !== t.full ? t.rec.name.replace(/,.*$/, '').trim() : '';
+  const guessed = (TWO_SURNAMES.has(key) || COMPOUND_PARTICLE.has(key)) && GIVEN_BY_BUILD(t) && norm(own) === norm(whole.split(' ').at(-1));
+  const sp = own && !guessed ? spelt(own, whole) : null;
+  if (sp) return sp;
+  const full = whole.replace(/^(King|Queen|Emperor|Empress|Prince|Princess|Sultan|Emir|Sheikh|Patriarch) /, '');
+  // "Saud" for "Saud of Saudi Arabia", "Juan Carlos I" for "Juan Carlos I of Spain", "Charlotte" for "Charlotte, Grand
+  // Duchess of Luxembourg".
+  const of = full.match(/^([^,]+?)(?:, [^,]+?)? of /);
+  if (of && of[1].split(' ').length <= 3) return of[1];
   const w = full.split(' ');
+  if (/^(ibn|bin) /i.test(full)) return full;
   if (/ (bin|ibn|bint) /i.test(full)) return w[0];
   if (/^[IVX]+$/.test(w.at(-1)) || w.length < 2) return full;
   if (FAMILY_FIRST.has(key)) return w[0];
   if (ORDER_VARIES.has(key)) return null;
-  return w.at(-1);
+  const parts = nameParts(w);
+  if (TWO_SURNAMES.has(key)) {
+    const joined = parts.findIndex((p, k) => k > 1 && /^(y|i) /.test(p));
+    if (joined > 0) return parts.slice(joined - 1, joined + 1).join(' ');
+    return parts.length >= 4 ? parts.slice(-2).join(' ') : parts.length === 3 ? null : parts.at(-1);
+  }
+  if (COMPOUND_PARTICLE.has(key) && parts.length >= 3 && PARTICLE.test(parts.at(-1).split(' ')[0])) return parts.slice(-2).join(' ');
+  return parts.at(-1);
 }
 // The words on a bar of `w` px: the name with the party where both fit, the name, the short name, or the name cut short.
 export function barLabel(t, w, key = null) {
@@ -488,6 +578,7 @@ export function renderSvg(model, { px, shown, chosen = null }) {
   const usedSlots = new Set();
   for (const lane of LANES) {
     const L = model.lanes[lane];
+    if (L.folded) continue; // one person in both offices: one lane is drawn, and the page says so in words
     const rows = Math.max(1, L.rows);
     const hasLinks = L.terms.some(t => t.relation);
     const h = G.title + rows * (G.row + G.rowGap) + (hasLinks ? G.succession : 0);
@@ -584,5 +675,17 @@ export function renderSvg(model, { px, shown, chosen = null }) {
 export function laneLabel(L, lane) {
   const n = L.terms.length, holes = L.holes || [];
   const none = holes.length ? `; none drawn for ${holes.slice(0, 5).map(yearsWords).join(', ')}${holes.length > 5 ? ` and ${holes.length - 5} more stretch${holes.length - 5 === 1 ? '' : 'es'}` : ''}` : '';
-  return `${LANE_NAME[lane]}: ${n} term${n === 1 ? '' : 's'} drawn${L.rows > 1 ? `, in ${L.rows} rows, as some overlap` : ''}${L.samePeople ? '; the same people as head of state' : ''}${none}`;
+  return `${LANE_NAME[lane]}: ${n} term${n === 1 ? '' : 's'} drawn${L.rows > 1 ? `, in ${L.rows} rows, as some overlap` : ''}${L.samePeople ? '; the same people as head of state' : ''}${L.alsoGovernment ? '; every head of government Wikidata records is the head of state of the time, so this lane stands for both offices' : ''}${none}`;
+}
+// Where one person holds both offices (buildModel, `folded`), the words that stand in place of the head of
+// government's lane: "One lane stands for both offices: the only head of government Wikidata records for Mexico (from
+// 2024) is the same person as the head of state of the time." It says what the record holds and no more: a head of
+// government Wikidata does not record is not claimed for the head of state.
+export function oneOfficeWords(model, name) {
+  const f = model.lanes.government.folded;
+  if (!f) return '';
+  const today = model.today + 1;
+  const when = f.cover.map(([p, q]) => (q >= today ? `from ${yearOfDay(p)}` : yearsWords([p, q]))).join(', ');
+  const who = f.count === 1 ? 'the only head of government Wikidata records' : 'every head of government Wikidata records';
+  return `One lane stands for both offices: ${who} for ${inProse(name)} (${when}) is the same person as the head of state of the time.`;
 }

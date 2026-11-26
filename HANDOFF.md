@@ -2,6 +2,31 @@
 > before the module was first deployed. Much of it no longer holds: states are keyed by Wikidata item and not by
 > Gleditsch and Ward number, the borders are Cliopatria's and not CShapes', statehood dates come from Wikidata, and 711
 > leaders take Wikidata's names and dates. The account that is kept true is `README.md`.
+>
+> Added on 26 November 2026, as the hand-over below says nothing of them. Since 25 November 2026 the state panel draws
+> the heads of state and government as lanes of bars on a scale of years, above the list of who was in charge:
+> - `lanes.js`: the layout, as pure functions with no DOM (which terms are drawn, in which lane and row, their party
+>   colours, gaps, short names and family links), so that it is tested in Node. Only Wikidata's terms (CC0) and VM's
+>   own lists (`scripts/leader-lists.mjs`) are drawn; leaders whose source is Archigos 4.1, whose page states no
+>   licence, are counted from the data and stay in the list. Where every head of government Wikidata records is the
+>   head of state of the time (Mexico, Cyprus, the Dominican Republic), one lane stands for both offices and the page
+>   says so (since 26 November 2026). Saudi Arabia has two lanes since the fixer's pass that day, as its Prime Minister
+>   was not always the King (Faisal under King Saud, Mohammed bin Salman from 2022).
+> - `scripts/leader-corrections.mjs` also holds `REIGNS`: the heads of state that Wikidata's head of state (P35) leaves
+>   out (George V, Hirohito, Ireland's kings and presidents and others), added to `offices` with `source: 'reigns'` and
+>   a `sourceNote` that the term shows as its source; and `spellNames`, run on every state after its corrections, which
+>   gives a short name that is the full name's last words, accents aside, the full name's spelling ("Díaz Ordaz").
+> - `app.js` draws them (`lanesSection`, `drawLanes`, `showTerm`); their styles are the `<style id="lanes-styles">`
+>   block in `index.html`.
+> - `data/succession.json`: family links between successive holders of one office (son, brother, daughter …), read
+>   from Wikidata by `scripts/wikidata-succession.mjs` (`npm run build-succession`, after `npm run build-data`). It
+>   changes nothing in `data/countries.json`, and the page draws the lanes without labels when the file is missing.
+> - Tests: `tests/data-corrections.test.mjs` (each correction of 26 November 2026 in the data, the footer and the
+>   correction scripts, with no browser; `npm test` runs it first), `tests/lanes.test.mjs` (unit tests of the layout,
+>   and page tests against `RETRO_URL`) and `tests/succession.test.mjs` (the file against `data/countries.json`);
+>   `npm test` runs the last two after the end-to-end tests.
+>
+> README.md ("Heads of state and government as lanes", "Succession inside a family") gives the rules in full.
 
 # H&P Retrospective — handoff (25 Oct 2026, 19:40 UTC)
 

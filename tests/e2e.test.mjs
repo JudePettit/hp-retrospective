@@ -574,7 +574,7 @@ test('every existing state\'s leader list reaches the present', async () => {
 
 // RT-04 (Jude, 15 November 2026: "Add this to the queue of tasks"): Montenegro and the ten microstates had no leader
 // list, because Archigos has no record of them. Each now has a dated list, built by hand in scripts/leader-lists.mjs
-// from Wikidata, Wikipedia and rulers.org, from the state's first day (independence, or 1926 for the four European
+// from Wikidata, Wikipedia and the states' official acts and records (free sources only since 27 November 2026), from the state's first day (independence, or 1926 for the four European
 // microstates; Montenegro from its first day on the map) to the present, with no gap or overlap beyond those named here.
 // Keyed by Wikidata item since 20 November 2026 (Dominica Q784, Grenada Q769, Saint Lucia Q760, Saint Vincent Q757,
 // Antigua Q781, Saint Kitts Q763, Monaco Q235, Liechtenstein Q347, Andorra Q228, San Marino Q238, Montenegro Q236).
@@ -582,17 +582,21 @@ const RT04 = { Q784: '1978-11-03', Q769: '1974-02-07', Q760: '1979-02-22', Q757:
 test('Montenegro and the ten microstates have dated leader lists from their start to the present (RT-04)', () => {
   const data = JSON.parse(readFileSync(new URL('../data/countries.json', import.meta.url), 'utf8'));
   // Each start is the state's independence, as its first leader's entry gives it from the lists' sources (Wikidata's
-  // positions held, the Wikipedia lists and rulers.org), or 1926 for those independent since before it; Montenegro's is
+  // positions held, the Wikipedia lists and the states' official acts), or 1926 for those independent since before it; Montenegro's is
   // its independence, 3 June 2006 (the test below).
   const startOf = key => RT04[key];
   // Gaps of more than a day between two leaders that the sources show (the office was empty, or the next holder took
   // office later): the start date of the leader after the gap.
-  // Andorra 1933: the General Council was dismissed and Pallarès left for exile on 19 August; the next Syndic was chosen
-  // on 18 September (rulers.org).
-  const GAPS = { Q784: ['1979-06-25'], Q228: ['1933-09-18', '1982-01-08'] };
+  // Grenada 1983: Austin's council fell with the invasion of 25 October and Scoon took the government by his
+  // Proclamation of 31 October. Andorra 1933: the General Council was dismissed and Pallarès left for exile in August
+  // (the day is not confirmed); the next Syndic was chosen on 18 September (the Council's act). Andorra 1982: from the
+  // last Syndic to the first Head of Government. (Dominica's gap of June 1979 closed on 27 November 2026: John's end and
+  // Seraphin's start are both June 1979, day not confirmed.)
+  const GAPS = { Q769: ['1983-10-31'], Q228: ['1933-09-18', '1982-01-08'] };
   // San Marino has two Captains Regent at a time, except while one who died in 1930 was not yet replaced, and while the
-  // provisional government of four held power in October 1957: the number in office on these days.
-  const SAN_MARINO = { '1930-09-10': 1, '1957-10-11': 4 };
+  // provisional government of four held power in October 1957 (from 1 October, as the official acts date it; the
+  // fixer, 27 November 2026): the number in office on these days.
+  const SAN_MARINO = { '1930-09-10': 1, '1957-10-01': 4 };
   const day = d => Date.parse(`${d}T00:00:00Z`) / 864e5;
   const ENTRY = [null, 'Regular', 'Irregular', 'Foreign Imposition'];
   const EXIT = [null, 'Regular', 'Natural Death', 'Irregular', 'Retired Due to Ill Health', 'Foreign', 'Suicide'];
@@ -641,7 +645,7 @@ test('Montenegro and the ten microstates have dated leader lists from their star
     if (!c.offices.length) say('nobody under "Also in office"');
   }
   assert.deepEqual(problems, []);
-  // Spot checks against the sources (Wikipedia's lists of office holders and rulers.org).
+  // Spot checks against the sources (Wikipedia's lists of office holders and the official acts).
   const at = (key, date) => data.countries[key].leaders.filter(l => l.start <= date && (!l.end || l.end > date)).map(l => l.full);
   assert.deepEqual(at('Q236', '2026-11-16'), ['Milojko Spajić']);
   assert.deepEqual(at('Q769', '1983-10-17'), ['Bernard Coard']);
@@ -713,32 +717,34 @@ test('the RT-04 lists follow the sources the second readers checked', () => {
   assert.deepEqual(data.countries.Q236.events.filter(e => e.date < '2006-06-03'), []);
   assert.deepEqual(office('Q236', 'hos', '2006-06-03'), ['Filip Vujanović']);
   assert.deepEqual(office('Q236', 'hos', '2006-06-02'), []);
-  // Saint Lucia: King acted for the ailing Compton from 1 May 2007 (Wikidata, rulers.org, his own article), as Archigos
+  // Saint Lucia: King acted for the ailing Compton from 1 May 2007 (his own statement as Acting Prime Minister, Wikidata,
+  // his infoboxes), as Archigos
   // dates Olmert from Sharon's stroke.
   assert.deepEqual(at('Q760', '2007-06-01'), ['Stephenson King']);
   assert.equal(find('Q760', 'John Compton', '2006-12-15').exit, 'Retired Due to Ill Health');
   // Grenada: Brathwaite's Interim Advisory Council of 1983-84 was non-party (Wikipedia's list: independent); the
   // National Democratic Congress was founded in 1987.
   assert.equal(find('Q769', 'Nicholas Brathwaite', '1983-12-09').parties, undefined);
-  // Saint Kitts and Nevis: Douglas was sworn in on 4 July 1995 (the government's biography, his office's 2012 release,
-  // rulers.org).
+  // Saint Kitts and Nevis: Douglas was sworn in on 4 July 1995 (the government's biography, his office's 2012 release).
   assert.deepEqual(at('Q763', '1995-07-05'), ['Denzil Douglas']);
-  // Liechtenstein: Franz Joseph's regency began on 30 March 1938 (the national historical lexicon, rulers.org); Schädler's
+  // Liechtenstein: Franz Joseph's regency began on 30 March 1938 (LGBl. 1938 Nr. 9, the national historical lexicon); Schädler's
   // government resigned on 15 June 1928 and Prince Alfred ran the government from 24 June (the lexicon).
   assert.deepEqual(at('Q347', '1938-03-30'), ['Franz Joseph II']);
   assert.deepEqual(office('Q347', 'hog', '1928-06-20'), []);
   assert.deepEqual(office('Q347', 'hog', '1928-06-24'), ['Prince Alfred of Liechtenstein']);
   assert.deepEqual(office('Q347', 'hog', '1928-06-14'), ['Gustav Schädler']);
-  // Monaco: Piette's resignation was accepted on 15 January 1932 and Bouilloux-Lafont's mission ended on 31 May 1937
-  // (Sovereign Ordinances 1277, 1278 and 2012, Journal de Monaco). Its Ministers of State are appointed officials, and
+  // Monaco: Piette's resignation was accepted on 15 January 1932 (Sovereign Ordinances 1277 and 1278) and Mauran acted
+  // for Bouilloux-Lafont from 22 May 1937 (Ordinance 1.987; Ordinance 2.012 ended the mission formally on 31 May),
+  // Journal de Monaco. Its Ministers of State are appointed officials, and
   // Dominica's acting President of 1979-80 sat for no party: none carries a party.
   assert.deepEqual(office('Q235', 'hog', '1932-01-14'), ['Maurice Piette']);
-  assert.deepEqual(office('Q235', 'hog', '1937-05-30'), ['Maurice Bouilloux-Lafont']);
+  assert.deepEqual(office('Q235', 'hog', '1937-05-21'), ['Maurice Bouilloux-Lafont']);
+  assert.deepEqual(office('Q235', 'hog', '1937-05-22'), ['Henry Mauran']);
   assert.deepEqual(data.countries.Q235.offices.filter(o => o.parties), []);
   assert.deepEqual(data.countries.Q784.offices.filter(o => o.full === 'Jenner Armour' && o.parties), []);
-  // Andorra: the General Council's own index of office holders and rulers.org name two Syndics Font Altimir and Molné
-  // Armengol; Pallarès left on 19 August 1933; the Bishop Co-Prince Iglesias resigned on 29 April 1969 (Catalan
-  // Wikipedia, Wikidata) and Malla acted from 19 June (Catalan Wikipedia, rulers.org).
+  // Andorra: the General Council's own index of office holders and summary of its acts name two Syndics Font Altimir
+  // and Molné Armengol; Pallarès left in August 1933; the Bishop Co-Prince Iglesias left on 29 April 1969 and Malla took
+  // possession as Co-Prince on 19 June (the Council's acts of 30 April and 19 June 1969, Catalan Wikipedia).
   assert.deepEqual(at('Q228', '1925-01-01'), ['Pere Font Altimir']);
   assert.equal(find('Q228', 'Pere Font Altimir').name, 'Font');
   assert.deepEqual(at('Q228', '1936-08-01'), ['Francesc Molné Armengol']);
@@ -1198,7 +1204,12 @@ test('leader links name the right person: Kostas Karamanlis, George Papandreou, 
   assert.deepEqual(at('Q33946', '1918-10-28'), ['Tomáš Masaryk', 'Tomáš_Masaryk']);
   assert.ok(!data.countries.Q33946.leaders.some(l => /Jan Masaryk/.test(l.full)), 'no Jan Masaryk as Czechoslovakia’s leader');
   const all = JSON.stringify(data);
-  for (const wrong of ['Peter_Spuhler', 'Theodoros_Grivas', 'Georgios_Papandreou']) assert.ok(!all.includes(wrong), wrong);
+  for (const wrong of ['Peter_Spuhler', 'Theodoros_Grivas']) assert.ok(!all.includes(wrong), wrong);
+  // "Georgios Papandreou" is the elder's article (1888-1968, Q311207): since 27 November 2026 his own three terms link
+  // it (Archigos's "G. Papandreou"), and nothing else does, so George Papandreou (born 1952) is never linked to it.
+  const georgios = Object.entries(data.countries).flatMap(([k, c]) => [...c.leaders, ...c.offices, ...c.events].filter(x => x.url === 'https://en.wikipedia.org/wiki/Georgios_Papandreou').map(x => `${k} ${x.start || x.date}`));
+  assert.deepEqual(georgios.sort(), ['Q41 1944-10-18', 'Q41 1944-10-18', 'Q41 1963-11-08', 'Q41 1963-11-08', 'Q41 1964-02-18', 'Q41 1964-02-18'], 'the elder\'s three terms and their arrivals only');
+  assert.equal((all.match(/Georgios_Papandreou/g) || []).length, 6);
 });
 
 // E6 of the decisions of 17 November 2026: the footer says which elections are corrected, from what, how many and where
@@ -1379,6 +1390,32 @@ test('a vote Wikidata dates only to the month is shown as the month, not as the 
     const soviet = await page.$$eval('#panel .events li', els => els.map(li => li.textContent.replace(/\s+/g, ' ').trim()));
     assert.ok(soviet.some(t => /^Jan 1935 ?election/i.test(t)), soviet.join(' | '));
   }
+});
+
+// Builder 3, 27 November 2026: a date in VM's own lists that no free source gives to the day (John Compton's return in
+// Saint Lucia in May 1982, Roc Pallarès's exile from Andorra in August 1933) is shown as the month in the panel's
+// list, its events and its lanes, never as the 1st. Until that day the event read "1 May 1982".
+test('a hand-built date known only to the month is shown as the month in the list, the events and the lanes', async () => {
+  await open('#y=1982&c=Q760');
+  const panel = (await page.textContent('#panel')).replace(/\s+/g, ' ');
+  const events = await page.$$eval('#panel .events li', els => els.map(li => li.textContent.replace(/\s+/g, ' ').trim()));
+  assert.ok(events.some(t => /^May 1982 ?leader/i.test(t) && t.includes('John Compton takes power')), events.join(' | '));
+  assert.doesNotMatch(panel, /\b1 May 1982\b/);
+  assert.match(panel, /May 1982 – 2 Apr 1996/);
+  assert.match(panel, /17 Jan 1982 – May 1982/);
+  await open('#y=1933&c=Q228');
+  const andorra = (await page.textContent('#panel')).replace(/\s+/g, ' ');
+  assert.match(andorra, /19 Dec 1927 – Aug 1933/);
+  assert.doesNotMatch(andorra, /\b1 Aug 1933\b/);
+  // Pallarès is in the head of government's lane, from Wikidata's offices or VM's list; where his bar is drawn, its
+  // words give the month.
+  const bars = await page.$$eval('#lanes-scroll .lane-bar', els => els.map(e => e.getAttribute('aria-label')));
+  const pallares = bars.filter(b => b.includes('Pallarès'));
+  for (const b of pallares) assert.match(b, /19 Dec 1927 to Aug 1933/, b);
+  assert.ok(!bars.join(' | ').includes('1 Aug 1933'));
+  await open('#y=1982&c=Q760');
+  const lucia = await page.$$eval('#lanes-scroll .lane-bar', els => els.map(e => e.getAttribute('aria-label')));
+  assert.ok(lucia.some(b => b.includes('John Compton, May 1982 to 2 Apr 1996')), lucia.join(' | '));
 });
 
 // Second reading, 25 November 2026: Bulgaria's Prime Minister of 2001-05 is named as he served, "Simeon

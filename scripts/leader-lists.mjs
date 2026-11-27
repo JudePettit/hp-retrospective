@@ -9,10 +9,17 @@
 // Archigos starts Kosovo, Czechia and Slovakia, except before 1926, where it keeps the day its holder took the office
 // (the page starts in 1926 and shows no event before it). The other office goes
 // under "Also in office" (`offices`, which replaces what Wikidata's head-of-state and head-of-government statements gave
-// these states). Every entry was read on 16 November 2026 from at least two of: Wikidata "position held" (P39) with its
-// start and end qualifiers, the English Wikipedia list of office holders (or the person's infobox), rulers.org, and the
-// Catalan Wikipedia list of Andorra's General Syndics. Where they disagree the entry follows the majority, or the source
-// named beside it. The Wikidata id (`qid`) names the person; `url` is their English Wikipedia article, or null where
+// these states). Every entry was read on 16 November 2026, and read again from free sources only on 27 November 2026,
+// from at least two of: Wikidata "position held" (P39) with its start and end qualifiers (CC0), Wikipedia's lists of
+// office holders and the persons' articles in any language (CC BY-SA, by revision), and the states' official acts and
+// records (the Journal de Monaco, the Landesgesetzblatt, the General Council of Andorra's acts, San Marino's Council
+// archive), with Liechtenstein's national historical lexicon for single facts only. Where they disagree the entry
+// follows the official act, then the majority of the free sources; where no free source gives the day, or the free
+// sources are split and no official act settles it, the date carries the month or year only and its comment says
+// "day not confirmed", naming the days given (the fixer, 27 November 2026: one cited source no longer outweighs
+// several uncited ones). rulers.org (non-commercial use only), worldstatesmen.org and enciclopedia.cat (Grup
+// Enciclopèdia, whose legal notice forbids reuse without written consent) are not sources, and a Wikipedia page whose
+// only source is one of them is not counted. The Wikidata id (`qid`) names the person; `url` is their English Wikipedia article, or null where
 // there is none (the page then links a search). `entry` and `exit` are set only where a source says how the person
 // came or went (a coup, a death in office, a foreign invasion); otherwise they stay null, the page's "unknown" form.
 //
@@ -39,21 +46,36 @@ function person(spec) {
   return { full, qid: qid || null, url: title ? W(title === '=' ? full : title) : null };
 }
 // A leader: who, from, to (null: in office), and { name, entry, exit, noQid, noParties } where a source gives them
-// (`noParties`: the person held this term for no party, so build-parties.mjs tags it with none).
+// (`noParties`: the person held this term for no party, so build-parties.mjs tags it with none). Where no free source
+// gives the day, the date is the first of the month or year, with startPrecision or endPrecision 'month' or 'year'
+// (27 November 2026), and the page shows the month or the year.
+const precise = ({ startPrecision, endPrecision } = {}) => ({ ...(startPrecision ? { startPrecision } : {}), ...(endPrecision ? { endPrecision } : {}) });
 export function E(spec, start, end, more = {}) {
   const p = person(spec);
   const { name, entry = null, exit = null, noQid, noParties } = more;
   if (!p.qid && !noQid) throw new Error(`leader-lists: ${p.full} has no Wikidata id and no reason why`);
-  return { name: name || family(p.full), full: p.full, url: p.url, qid: p.qid, start, end, entry, exit, exitHow: null, source: 'leader-lists', ...(noQid ? { noQid } : {}), ...(noParties ? { noParties: true } : {}) };
+  return { name: name || family(p.full), full: p.full, url: p.url, qid: p.qid, start, end, entry, exit, exitHow: null, source: 'leader-lists', ...precise(more), ...(noQid ? { noQid } : {}), ...(noParties ? { noParties: true } : {}) };
 }
-// Someone under "Also in office": 'hos' (head of state) or 'hog' (head of government).
-const O = (office, spec, start, end) => ({ office, ...person(spec), start, end });
+// Someone under "Also in office": 'hos' (head of state) or 'hog' (head of government), with { startPrecision,
+// endPrecision } where the day is not known.
+const O = (office, spec, start, end, more) => ({ office, ...person(spec), start, end, ...precise(more) });
 // Consecutive terms: each [start, spec, (more)] ends where the next starts (or on more.end, where the sources show a
-// gap); the last is still in office.
+// gap); the last is still in office. A start known only to the month or year ends the term before it to the same.
 function chain(rows) {
-  return rows.map(([start, spec, more = {}], i) => E(spec, start, 'end' in more ? more.end : (rows[i + 1]?.[0] ?? null), more));
+  return rows.map(([start, spec, more = {}], i) => {
+    const next = rows[i + 1];
+    const endPrecision = 'end' in more ? more.endPrecision : next?.[2]?.startPrecision;
+    return E(spec, start, 'end' in more ? more.end : (next?.[0] ?? null), { ...more, endPrecision });
+  });
 }
-const officeChain = (office, rows) => rows.map(([start, spec, end], i) => O(office, spec, start, end !== undefined ? end : (rows[i + 1]?.[0] ?? null)));
+// The same for "Also in office": each [start, spec, (end), (more)], `more` giving { startPrecision } where the day is not
+// known; the term before such an entry ends to the same precision, unless it has its own end (the fixer, 27 November
+// 2026, for Fornesa's start in February 1940).
+const officeChain = (office, rows) => rows.map(([start, spec, end, more = {}], i) => {
+  const next = rows[i + 1];
+  const endPrecision = end !== undefined ? more.endPrecision : next?.[3]?.startPrecision;
+  return O(office, spec, start, end !== undefined ? end : (next?.[0] ?? null), { startPrecision: more.startPrecision, endPrecision });
+});
 // The British monarch as head of state of a Caribbean realm, from its independence (Wikidata's "monarch of …" items).
 const realm = from => [O('hos', 'Elizabeth II|Q9682|=', from, '2022-09-08'), O('hos', 'Charles III|Q43274|=', '2022-09-08', null)];
 
@@ -68,7 +90,9 @@ export const LISTS = {
   // starts the independent state (second reader, 16 November 2026); Vujanović, President since 22 May 2003, is dated
   // from the same day. Wikidata (Q2353252) and Wikipedia agree on every later date; Wikidata's statement on Montenegro
   // itself (P6) ends his terms on 10 October 2006 and 21 December 2010, against 10 November 2006 and 29 December 2010
-  // in both.
+  // in both. Read again on 27 November 2026: Wikidata's holders of Q2353252 and Q1149153, English Wikipedia's "Prime
+  // Minister of Montenegro" (revision 1377838575) and "List of presidents of Montenegro" (revision 1386516674), and the
+  // Government's reports at gov.me. Each day is the same in all of them.
   Q236: {
     leaders: chain([
       ['2006-06-03', 'Milo Đukanović|Q200305|='],
@@ -87,17 +111,21 @@ export const LISTS = {
       ['2023-05-20', 'Jakov Milatović|Q104417661|=']
     ])
   },
-  // Dominica: Prime Minister (a parliamentary republic) from independence, 3 November 1978. John's end (21 June 1979)
-  // follows Wikidata, rulers.org and his own article; Seraphin's start (25 June) follows Wikidata, Wikipedia's list and
-  // his article (rulers.org: 21 June), so the four days between are left empty: each date follows three of the four
-  // sources, while Wikipedia's list hands over on 25 June and rulers.org on 21 June (second reader, 16 November 2026;
-  // kept, and written into the README's known limits). Pierre Charles acted from Douglas's death
-  // on 1 October 2000 (Wikipedia's list, rulers.org; Wikidata dates him from 3 October). Wikidata ends Riviere's term on
-  // 8 August 2004; he acted for two days, to 8 January.
+  // Dominica: Prime Minister (a parliamentary republic) from independence, 3 November 1978. John left and Seraphin was
+  // sworn in in June 1979, day not confirmed: 21 June in German Wikipedia's "Oliver Seraphin" (revision 246196606),
+  // which has Judge Bruno swear him in that day, citing Christian, "A Rain of Stones", in André and Christian, In
+  // Search of Eden (1992), pp. 145-146, the one free source that cites a published work for the day; German
+  // Wikipedia's "Patrick John" (revision 268548353), Wikidata and John's English article also end John on 21 June.
+  // The English, French and Spanish lists give 25 June for both, and Wikidata's start for Seraphin (imported from
+  // English Wikipedia) and his English article give 25 June, none citing a source for it (read 27 November 2026). The
+  // free sources are split, five to four, no official act was found, and one cited source does not outweigh the
+  // others (header), so only the month is given (the fixer, 27 November 2026). Pierre Charles acted from Douglas's death on
+  // 1 October 2000 (the English, French, Spanish, German and Russian lists; Wikidata, imported from English Wikipedia,
+  // dates him from 3 October). Wikidata ends Riviere's term on 8 August 2004; he acted for two days, to 8 January.
   Q784: {
     leaders: chain([
-      ['1978-11-03', 'Patrick John|Q1281003|=', { end: '1979-06-21' }],
-      ['1979-06-25', 'Oliver Seraphin|Q324474|='],
+      ['1978-11-03', 'Patrick John|Q1281003|='],
+      ['1979-06-01', 'Oliver Seraphin|Q324474|=', { startPrecision: 'month' }],
       ['1980-07-21', 'Eugenia Charles|Q258685|='],
       ['1995-06-14', 'Edison James|Q366200|='],
       ['2000-02-03', 'Rosie Douglas|Q1279447|=', DIED],
@@ -127,19 +155,25 @@ export const LISTS = {
   },
   // Grenada: Prime Minister from independence, 7 February 1974, with those who held power from 1979 to 1984, as
   // Wikipedia's "List of heads of government of Grenada" gives them: Bishop's People's Revolutionary Government (from the
-  // coup of 13 March 1979), Coard (from Bishop's arrest, 14 October 1983), Austin's Revolutionary Military Council
-  // (19 October, deposed by the US-led invasion of 25 October), the Governor-General Scoon as interim head of government,
-  // and Brathwaite's Interim Advisory Council. Wikidata ends Gairy on 9 March 1979 and Bishop on 16 October and leaves
-  // out Coard and Scoon; rulers.org ends Bishop on 19 October and starts Brathwaite on 15 November (acting).
-  // Brathwaite's Interim Advisory Council was non-party (Wikipedia's list: independent; his National Democratic
-  // Congress was founded in 1987), so that term carries no party (second reader, 16 November 2026).
+  // coup of 13 March 1979), Coard (Bishop was put under house arrest on 13 October 1983; Strachan announced his
+  // dismissal and Coard's leadership on 14 October, the People's Revolutionary Government article), Austin's
+  // Revolutionary Military Council (from 19 October to the US-led invasion of 25 October: his article's text and
+  // succession box, the People's Revolutionary Government article and Wikidata; the list and his infobox give 30 October,
+  // the day he was captured, a change made on 17 November 2026 without a citation), the Governor-General Scoon as
+  // interim head of government from his Proclamation of 31 October 1983 (Government Gazette Extraordinary Vol. 101
+  // No. 49, printed in the UN Secretary-General's report A/38/568, annex II; no free source gives 25 October), and
+  // Brathwaite's Interim Advisory Council. The days between 25 and 31 October are left empty. Wikidata ends Gairy on
+  // 9 March 1979 and Bishop on 16 October (as Bishop's succession box does), both imported from English Wikipedia, and
+  // leaves out Coard and Scoon (read 27 November 2026). Brathwaite's Interim Advisory Council was non-party
+  // (Wikipedia's list: independent; his National Democratic Congress was founded in 1987), so that term carries no
+  // party (second reader, 16 November 2026).
   Q769: {
     leaders: chain([
       ['1974-02-07', 'Eric Gairy|Q203046|=', { exit: 'Irregular' }],
       ['1979-03-13', 'Maurice Bishop|Q468234|=', IRREGULAR],
       ['1983-10-14', 'Bernard Coard|Q118047|=', IRREGULAR],
-      ['1983-10-19', 'Hudson Austin|Q953795|=', { entry: 'Irregular', exit: 'Foreign' }],
-      ['1983-10-25', 'Paul Scoon|Q709738|='],
+      ['1983-10-19', 'Hudson Austin|Q953795|=', { entry: 'Irregular', exit: 'Foreign', end: '1983-10-25' }],
+      ['1983-10-31', 'Paul Scoon|Q709738|='],
       ['1983-12-09', 'Nicholas Brathwaite|Q1984818|=', { noParties: true }],
       ['1984-12-04', 'Herbert Blaize|Q1276896|=', { ...DIED, end: '1989-12-19' }],
       ['1989-12-20', 'Ben Jones|Q816529|Ben Jones (Grenadian politician)'],
@@ -152,22 +186,27 @@ export const LISTS = {
     ]),
     offices: realm('1974-02-07')
   },
-  // Saint Lucia: Prime Minister from independence, 22 February 1979. Compton's second term starts on 3 May 1982, the
-  // day Pilgrim's interim government ended (Wikipedia's list, citing the Office of the Prime Minister, and rulers.org;
-  // Wikidata and his infobox: 3 November). The change of December 2006 is on the 15th (rulers.org, Wikidata's end for
-  // Anthony, both men's infoboxes; Wikipedia's list: the 11th). King acted for Compton, disabled by strokes, from
-  // 1 May 2007 (Wikidata, rulers.org, King's article; Wikipedia's list dates him from Compton's death on 7 September),
-  // and is dated from then, as Archigos dates Olmert from Sharon's stroke, with Compton's exit as Sharon's (second
-  // reader, 16 November 2026). Compton's article says he "temporarily resumed power" in early June 2007 to reshuffle
-  // the cabinet; that is not a separate entry. Chastanet left on 28 July 2021 (Wikipedia, rulers.org; Wikidata:
-  // 26 July).
+  // Saint Lucia: Prime Minister from independence, 22 February 1979. Compton's second term starts in May 1982 (the
+  // Office of the Prime Minister's history page). The day is not confirmed: Wikipedia's lists give 3 May, the day
+  // of the election, without a source for the day, and the IPU's chronicle gives 5 May; Wikidata and his English
+  // infobox give 3 November, against the official page. Compton was sworn in on 15 December 2006 (the Government
+  // Information Service's release of that day; Wikidata's end for Anthony; Wikipedia's English list and Wikidata:
+  // the 11th, the day of the election). King acted for Compton, disabled by strokes, from 1 May 2007, the day
+  // Compton arrived in New York (King's own statement as Acting Prime Minister; his infobox in English and French;
+  // Wikidata). No source names the day his acting term began, and the Government Information Service calls him
+  // Acting Prime Minister by 14 May. Wikipedia's lists date him from Compton's death on 7 September. He is dated
+  // from 1 May, as Archigos dates Olmert from Sharon's stroke, with Compton's exit as Sharon's (second reader,
+  // 16 November 2026). Compton's article says he "temporarily resumed power" in early June 2007 to reshuffle the
+  // cabinet; that is not a separate entry. Pierre took the oath on 28 July 2021 (the Government Information
+  // Service's release of 30 July; Wikidata's head of government; Wikidata's end for Chastanet: 26 July, the day of
+  // the election). Read again from free sources on 27 November 2026.
   Q760: {
     leaders: chain([
       ['1979-02-22', 'John Compton|Q716020|='],
       ['1979-07-02', 'Allan Louisy|Q966659|='],
       ['1981-05-04', 'Winston Cenac|Q1281039|='],
       ['1982-01-17', 'Michael Pilgrim|Q353922|='],
-      ['1982-05-03', 'John Compton|Q716020|='],
+      ['1982-05-01', 'John Compton|Q716020|=', { startPrecision: 'month' }],
       ['1996-04-02', 'Vaughan Lewis|Q353918|='],
       ['1997-05-24', 'Kenny Anthony|Q57750|='],
       ['2006-12-15', 'John Compton|Q716020|=', { exit: 'Retired Due to Ill Health' }],
@@ -179,8 +218,12 @@ export const LISTS = {
     offices: realm('1979-02-22')
   },
   // Saint Vincent and the Grenadines: Prime Minister from independence, 27 October 1979. Gonsalves took office on
-  // 29 March 2001 (Wikipedia, rulers.org; Wikidata: 28 March) and Friday on 28 November 2025 (Wikipedia, rulers.org;
-  // Wikidata has no end for Gonsalves yet).
+  // 29 March 2001 by the majority of free sources: Wikipedia's list (rev 1373760138), its articles on Gonsalves in
+  // English, German, French and Spanish, the French article on Eustace, and Wikidata's end for Eustace. Wikidata's
+  // start for Gonsalves and the English and Spanish articles on Eustace give 28 March, the polling day. None cites
+  // a source for the day, so the day is contested. Friday was sworn in on 28 November 2025 (Wikipedia, "2025
+  // Vincentian general election", rev 1387453426; his articles in four languages agree). Wikidata has no end for
+  // Gonsalves yet. Read 26 and 27 November 2026.
   Q757: {
     leaders: chain([
       ['1979-10-27', 'Milton Cato|Q165402|='],
@@ -191,7 +234,10 @@ export const LISTS = {
     ]),
     offices: realm('1979-10-27')
   },
-  // Antigua and Barbuda: Prime Minister from independence, 1 November 1981 (Wikidata and rulers.org agree).
+  // Antigua and Barbuda: Prime Minister from independence, 1 November 1981 (the Constitution at ab.gov.ag counts from
+  // that day, ss. 111 and 112). Every day is the same in Wikidata (P39 of Q20682527; three of the four statements were
+  // imported from English Wikipedia), the English Wikipedia list (revision 1356599174), the Spanish list (revision
+  // 176247379) and the French list (revision 241093031) (read 26 November 2026, checked again 27 November 2026).
   Q781: {
     leaders: chain([
       ['1981-11-01', 'Vere Bird|Q561911|='],
@@ -202,9 +248,10 @@ export const LISTS = {
     offices: realm('1981-11-01')
   },
   // Saint Kitts and Nevis: Prime Minister from independence, 19 September 1983. Douglas was sworn in on 4 July 1995
-  // (the government's biography at gov.kn, his office's release of 5 July 2012, rulers.org; Wikipedia's list and
-  // Wikidata's end for Simmonds: 7 July; Wikidata's start for Douglas and his article: 6 July; second reader,
-  // 16 November 2026).
+  // (the government's biography at gov.kn, his office's release of 5 July 2012, SFLCN of 6 July 2010; Wikipedia's list,
+  // revision 1373760107, and Wikidata's end for Simmonds: 7 July; Wikidata's start for Douglas and his article: 6 July,
+  // though the article's own source is the gov.kn biography). Harris from 18 February 2015 and Drew from 6 August 2022
+  // (Wikidata, citing gov.kn; Wikipedia's list). Read again on 27 November 2026.
   Q763: {
     leaders: chain([
       ['1983-09-19', 'Kennedy Simmonds|Q953225|='],
@@ -215,44 +262,61 @@ export const LISTS = {
     offices: realm('1983-09-19')
   },
   // Monaco: the Sovereign Prince, who holds executive power (the Minister of State, appointed by him, is under "Also in
-  // office"). Dates from Wikidata (Q2457774) and rulers.org. Albert was regent from 31 March 2005 while Rainier III was
-  // dying; he is dated from his accession on 6 April.
+  // office"). Dates from Wikidata (Q2457774) and the French and German lists of rulers; Louis II's death on 9 May 1949
+  // from the Journal de Monaco (no. 4779). Albert was regent from 31 March 2005 while Rainier III was dying; he is dated
+  // from his accession on 6 April (read 27 November 2026).
   Q235: {
     leaders: chain([
       ['1922-06-26', 'Louis II|Q316543|Louis II of Monaco', DIED],
       ['1949-05-09', 'Rainier III|Q185025|Rainier III of Monaco', DIED],
       ['2005-04-06', 'Albert II|Q3910|Albert II of Monaco']
     ]),
-    // Ministers of State, with rulers.org's days (acting ones included); Wikidata (Q1655971) differs by days or weeks
-    // for Piette, Bouilloux-Lafont, Roblot, de Witasse, Saint-Mleux, Lévêque and Leclercq and stops in January 2025.
-    // Two changes follow the official Journal de Monaco instead (second reader, 16 November 2026): Piette's resignation
-    // was accepted and Mauran made acting Minister on 15 January 1932 (Sovereign Ordinances 1277 and 1278; rulers.org:
-    // 12 January), and Bouilloux-Lafont's mission ended on 31 May 1937 (Ordinance 2012; rulers.org: 22 May). French
-    // Wikipedia differs by days on five more changes (1948-49, 1959, 1981, 2000, 2020) with no official text read, so
-    // those keep rulers.org's days. The Ministers are appointed officials, so they carry no party (Wikidata's tag for
-    // most is "independent politician", which the page would list as a party in power).
+    // Ministers of State (acting ones included), each from the official Journal de Monaco (journaldemonaco.gouv.mc),
+    // read 27 November 2026: the day the Sovereign Ordinance names for the appointment to take effect; where it names
+    // none, the day the Journal shows him taking up the post (Gregh's oath on 1 April 1969, Soum received at the
+    // Government Palace on 14 November 1953, Journal no. 5016); where it shows none, the day of the act. So Mauran acted
+    // from 15 January 1932 (Ordinances 1.277 and 1.278) and again from 22 May 1937 (Ordinance 1.987, Journal no. 4153;
+    // Ordinance 2.012 ends Bouilloux-Lafont's mission formally on 31 May); de Witasse from 20 November 1944
+    // (Ordinances 2.929 and 2.931, Journal no. 4545, "Donné en Notre Palais à Monaco, le vingt novembre", read again by
+    // the fixer on 27 November 2026: the day of the act, as the rule gives, for neither names a day of effect and the
+    // Journal shows no day he took up the post; his first signature in it is of 16 December). Wikidata (Q7192530) dates
+    // him from 13 October 1944, with no reference, against the Journal, which still calls Blanchy "Ministre d'Etat
+    // intérimaire" on 9 November (no. 4543); Voizard from 24 July 1950 (Ordinance 261, Journal no. 4843: "prendra effet du 24 juillet 1950");
+    // Pelletier from 1 February 1959, Demange from 1 January 1967, Saint-Mleux from 1 June 1972, Herly from 8 July 1981
+    // and Dupont from 18 February 1991 (each ordinance's effect clause); Berro-Amadeï from 10 January 2025, when
+    // Ordinance 11.020 gave her the interim of the stricken Guillaume, as Ordinance 5.657 gave Tonelli his in 2015.
+    // Blanchy acted between Voizard and Soum in 1953 (the Journal calls him "Ministre d'État intérimaire" in nos. 5006,
+    // 5015 and 5016); no act was found, and his start, 2 September, is the end of Voizard's term in Wikidata (Q961184)
+    // and in the French, Italian and Spanish lists, which leave the interim out (Wikidata gives Blanchy no term in
+    // 1953; read again by the fixer on 27 November 2026). Wikidata's Minister statements (Q1655971) carry no references, except Dartout's, and stop in
+    // January 2025; the German list's only source is rulers.org and the English list's is worldstatesmen.org, so
+    // neither is counted. Philippe Mettoux, named on 4 June 2025 in French Wikipedia, gave it up before taking office
+    // (no ordinance names him; Ordinance 11.290 repeals 11.020 only from Mirmand's day), so he has no entry. The
+    // Ministers are appointed officials, so they carry no party (Wikidata's tag for most is "independent politician",
+    // which the page would list as a party in power).
     offices: officeChain('hog', [
       ['1923-10-01', 'Maurice Piette|Q6793413|='],
       ['1932-01-15', 'Henry Mauran|Q16010445|='],
       ['1932-06-14', 'Maurice Bouilloux-Lafont|Q3300465|='],
-      ['1937-05-31', 'Henry Mauran|Q16010445|='],
+      ['1937-05-22', 'Henry Mauran|Q16010445|='],
       ['1937-08-01', 'Émile Roblot|Q8078312|='],
       ['1944-09-29', 'Pierre Blanchy|Q3384034|='],
-      ['1944-10-13', 'Pierre de Witasse|Q7192530|='],
+      ['1944-11-20', 'Pierre de Witasse|Q7192530|='],
       ['1948-12-31', 'Pierre Blanchy|Q3384034|='],
       ['1949-07-12', 'Jacques Rueff|Q1398687|='],
-      ['1950-08-01', 'Pierre Voizard|Q961184|=', '1953-09-02'],
-      ['1953-11-15', 'Henry Soum|Q5728515|=', '1958-12-31'],
+      ['1950-07-24', 'Pierre Voizard|Q961184|='],
+      ['1953-09-02', 'Pierre Blanchy|Q3384034|='],
+      ['1953-11-14', 'Henry Soum|Q5728515|=', '1958-12-31'],
       ['1959-01-01', 'Pierre Blanchy|Q3384034|='],
-      ['1959-02-12', 'Émile Pelletier|Q3588689|='],
+      ['1959-02-01', 'Émile Pelletier|Q3588689|='],
       ['1962-01-23', 'Pierre Blanchy|Q3384034|='],
       ['1963-08-16', 'Jean Reymond|Q4392628|='],
-      ['1966-12-28', 'Paul Demange|Q3371035|Paul Demange (politician)'],
+      ['1967-01-01', 'Paul Demange|Q3371035|Paul Demange (politician)'],
       ['1969-04-01', 'François-Didier Gregh|Q4148820|='],
-      ['1972-05-24', 'André Saint-Mleux|Q4416048|='],
-      ['1981-07-13', 'Jean Herly|Q1685665|='],
+      ['1972-06-01', 'André Saint-Mleux|Q4416048|='],
+      ['1981-07-08', 'Jean Herly|Q1685665|='],
       ['1985-09-16', 'Jean Ausseil|Q931543|='],
-      ['1991-02-16', 'Jacques Dupont|Q1677870|Jacques Dupont (politician)'],
+      ['1991-02-18', 'Jacques Dupont|Q1677870|Jacques Dupont (politician)'],
       ['1994-12-02', 'Paul Dijoud|Q3371082|='],
       ['1997-02-03', 'Michel Lévêque|Q3310255|='],
       ['2000-01-01', 'Patrick Leclercq|Q1395490|='],
@@ -262,17 +326,19 @@ export const LISTS = {
       ['2016-02-01', 'Serge Telle|Q3479546|='],
       ['2020-09-01', 'Pierre Dartout|Q20556507|='],
       ['2024-09-02', 'Didier Guillaume|Q3027038|='],
-      ['2025-01-17', 'Isabelle Berro-Amadeï|Q1673628|='],
+      ['2025-01-10', 'Isabelle Berro-Amadeï|Q1673628|='],
       ['2025-07-21', 'Christophe Mirmand|Q29934395|=']
     ]).map(noParties)
   },
   // Liechtenstein: the Prince, who holds executive power, or the member of his house who exercises his powers for him:
-  // Franz Joseph as regent for Franz I from 30 March 1938 (Liechtenstein's national historical lexicon, in its articles
-  // on both men, and rulers.org; his English infobox: 31 March; second reader, 16 November 2026), Prince from 25 July 1938;
-  // Hans-Adam as his father's deputy from 26 August 1984, Prince from 13 November 1989; Hereditary Prince Alois for
-  // Hans-Adam II since 15 August 2004 (as National Analysis names him). The reigning Prince is then under "Also in
-  // office", as head of state. Reigns from Wikipedia's "List of monarchs of Liechtenstein", rulers.org and Wikidata
-  // (whose start for Johann II is the year 1858 only).
+  // Franz Joseph empowered to exercise the rights of Franz I from 30 March 1938 (the letter of that day, LGBl. 1938
+  // Nr. 9; Liechtenstein's national historical lexicon, in its articles on both men; his English infobox: 31 March),
+  // Prince from 25 July 1938; Hans-Adam as his father's deputy from 26 August 1984 (LGBl. 1984 Nr. 32, "mit Wirkung ab
+  // heutigem Tage"), Prince from 13 November 1989; Hereditary Prince Alois for Hans-Adam II since 15 August 2004
+  // (LGBl. 2004 Nr. 171; as National Analysis names him). The reigning Prince is then under "Also in office", as head
+  // of state. Reigns from Wikipedia's "List of monarchs of Liechtenstein" (revision 1387499961), the German list of
+  // Princes (revision 272398544) and Wikidata (whose start for Johann II is the year 1858 only; his father's death,
+  // P570, gives 12 November 1858). Read again on 27 November 2026.
   Q347: {
     leaders: chain([
       ['1858-11-12', 'Johann II|Q317016|Johann II of Liechtenstein', DIED],
@@ -287,14 +353,18 @@ export const LISTS = {
         ['1938-07-25', 'Franz Joseph II|Q165674|Franz Joseph II of Liechtenstein'],
         ['1989-11-13', 'Hans-Adam II|Q57454|Hans-Adam II of Liechtenstein']
       ]),
-      // Heads of Government (Prime Ministers), with rulers.org's days; Wikidata (Q62396915) agrees to 1978 within days
-      // (Schädler from 10 June 1922 to 24 June 1928, Prince Alfred from 26 June) and its statements on Liechtenstein
-      // (P6) give the same days from 1978. In 1928 the national historical lexicon is followed instead (second reader,
-      // 16 November 2026): Schädler's whole government resigned on 15 June (also German Wikipedia's list) and Prince
-      // Alfred ran the government provisionally from 24 June (rulers.org: 28 June for both); the days between are left
-      // empty. Hoop keeps 4 August (rulers.org, German Wikipedia; the lexicon ends Alfred's term on 6 August).
+      // Heads of Government (Prime Ministers), from Wikidata (Q62396915, and its statements on Liechtenstein, P6, from
+      // 1978), English Wikipedia's "List of heads of government of Liechtenstein" (revision 1368831918) and the German
+      // list (revision 270585793), read again on 27 November 2026; neither list cites rulers.org. Schädler from
+      // 10 June 1922, when the Prince appointed him on the Landtag's proposal (the lexicon, Wikidata, the English list);
+      // the Landtag had elected him on 6 June (the lexicon on Felix Gubelmann; the German list dates him from then). In
+      // 1928 the lexicon is followed: Schädler's whole government resigned on 15 June (also the German list; the English
+      // list and Wikidata: 24 June) and Prince Alfred ran the government provisionally from 24 June (also the English
+      // list and his German article; the German list leaves him out; Wikidata and his English infobox: 26 June); the
+      // days between are left empty. Hoop keeps 4 August (Wikidata, both lists, both his articles; the lexicon ends
+      // Alfred's term on 6 August).
       ...officeChain('hog', [
-        ['1922-06-06', 'Gustav Schädler|Q345161|=', '1928-06-15'],
+        ['1922-06-10', 'Gustav Schädler|Q345161|=', '1928-06-15'],
         ['1928-06-24', 'Prince Alfred of Liechtenstein|Q16403716|Prince Alfred of Liechtenstein (1875–1930)'],
         ['1928-08-04', 'Josef Hoop|Q345112|='],
         ['1945-09-03', 'Alexander Frick|Q689754|='],
@@ -313,50 +383,83 @@ export const LISTS = {
     ]
   },
   // Andorra: the General Syndic (Síndic General), elected by the General Council, who led the Valleys' government until
-  // the office of Head of Government was created in January 1982; then the Head of Government. The Syndics' days are
-  // rulers.org's; the Catalan Wikipedia list and Wikidata (Q6571687) give most of them to the year or month only and agree
-  // with them, except: Pallarès's end (18 September 1933 in both; rulers.org gives 19 August), Molné's second surname
-  // (Rogé in both, Armengol in rulers.org), and Reig's first end (31 December 1966 in both, 27 December in rulers.org,
-  // which starts Escudé that day). After the second reader (16 November 2026): Pallarès ends on 19 August 1933, when
-  // French gendarmes had dismissed the General Council and he left for exile in Barcelona (his Catalan Wikipedia article,
-  // rulers.org), and the four weeks to the next Syndic's election on 18 September are left empty; two Syndics are named
-  // as the General Council's own index of office holders (Jordi Guillamet, "Índex de càrrecs institucionals 1133-2023",
-  // consellgeneral.ad) and rulers.org name them, Pere Font Altimir and Francesc Molné Armengol (Wikidata's labels and the
-  // Catalan list: Font i Altamir, Molné i Rogé; their Wikidata ids, whose dates match, are kept); the index's "Escudé
-  // Farrero" stands alone against the three others, so Ferrero stays. Heads of Government from Wikipedia's list, rulers.org
-  // and Wikidata (Q634322), acting ones included; Wikidata ends Bartumeu on 12 May 2011 and leaves out the acting heads
-  // of 2011 and 2015. rulers.org's acting head of April and May 2023 (Jordi Gallardo) is in neither of the others.
+  // the office of Head of Government was created in January 1982; then the Head of Government. The Syndics' days come
+  // from the General Council's own records, read 27 November 2026: its summary of the acts ("Del Consell de la Terra al
+  // Consell General. Síndics, subsíndics, consellers i cònsols (1133-2023)", consellgeneral.ad, cited by entry) and its
+  // index of office holders (Jordi Guillamet, "Índex de càrrecs institucionals 1133-2023"). A Syndic is dated from the
+  // oath where the act gives one, and otherwise from the election: Font 17 December 1923 (entry 1.142), Pallarès
+  // 19 December 1927 (1.148), Torres 18 September 1933 (1.166), Molné acting from 21 July 1936 "fins al pròxim Consell
+  // del 16 de desembre" (1.183), Cairat sworn on 16 December 1936 (1.187), Reig from 31 December 1960 (1.269), Escudé
+  // sworn on 31 December 1966 (1.286: elected on the 27th), Reig elected on 28 December 1972 (1.307 names no oath;
+  // Wikidata gives the 29th and Escudé's Catalan article the 31st, so that day is contested), Sangrà sworn on
+  // 30 December 1978 (1.336: elected on the 29th), Sangrà's end on 4 January 1982 (1.349) and Ribas from 8 January
+  // (1.350). Pallarès left office in August 1933 (his Catalan Wikipedia article, revision 37843718, "l'agost de 1933"),
+  // when French gendarmes had the General Council dismissed; the day is not confirmed (the Catalan list's 19 August is
+  // an uncited note in a list whose main source is rulers.org, which VM does not use; the act of 18 September, 1.166,
+  // says only that the Council "va ser destituït"), and the weeks to Torres's election are left empty. The index and
+  // the summary name Pere Font Altimir and Francesc Molné Armengol (Wikidata's labels and the Catalan list: Font i
+  // Altamir, Molné i Rogé; their Wikidata ids, whose dates match, are kept); the index's "Escudé Farrero" stands
+  // alone against the others, so Ferrero stays. Heads of Government from Wikipedia's list and Wikidata (Q634322) and
+  // the Council's journals (oaths of Martí on 12 May 2011 and 1 April 2015, of Espot on 16 May 2019). Bartumeu ends
+  // on 12 May 2011 (Wikidata; the Spanish list's row for him): the acting head of April and May 2011 is not confirmed,
+  // since the one source his English article gives for Pere López Agràs's acting term is rulers.org and the lists cite
+  // nothing for it. Saboya acted in 2015 by the delegation decree of 18 March 2015 (Martí's English article, citing
+  // Ràdio Seu and the BOPA).
   Q228: {
     leaders: chain([
       ['1923-12-17', 'Pere Font Altimir|Q68173609', { name: 'Font' }],
-      ['1927-12-19', 'Roc Pallarès Rossell|Q68168956', { name: 'Pallarès', end: '1933-08-19' }],
+      ['1927-12-19', 'Roc Pallarès Rossell|Q68168956', { name: 'Pallarès', end: '1933-08-01', endPrecision: 'month' }],
       ['1933-09-18', 'Pere Torres i Riba|Q68174128', { name: 'Torres' }],
       ['1936-07-21', 'Francesc Molné Armengol|Q68192409', { name: 'Molné' }],
       ['1936-12-16', 'Francesc Cairat Freixes|Q68115365', { name: 'Cairat' }],
       ['1960-12-31', 'Julià Reig Ribó|Q3819390|=', { name: 'Reig' }],
-      ['1966-12-27', 'Francesc Escudé Ferrero|Q68117747', { name: 'Escudé' }],
+      ['1966-12-31', 'Francesc Escudé Ferrero|Q68117747', { name: 'Escudé' }],
       ['1972-12-28', 'Julià Reig Ribó|Q3819390|=', { name: 'Reig' }],
-      ['1978-12-29', 'Estanislau Sangrà Font|Q68111337', { name: 'Sangrà', end: '1982-01-04' }],
+      ['1978-12-30', 'Estanislau Sangrà Font|Q68111337', { name: 'Sangrà', end: '1982-01-04' }],
       ['1982-01-08', 'Òscar Ribas Reig|Q292884|=', { name: 'Ribas' }],
       ['1984-05-21', 'Josep Pintat-Solans|Q72546|Josep Pintat Solans'],
       ['1990-01-12', 'Òscar Ribas Reig|Q292884|=', { name: 'Ribas' }],
       ['1994-12-07', 'Marc Forné Molné|Q365542|=', { name: 'Forné' }],
       ['2005-05-27', 'Albert Pintat|Q312785|='],
       ['2009-06-05', 'Jaume Bartumeu|Q217598|='],
-      ['2011-04-28', 'Pere López Agràs|Q7167739|=', { name: 'López' }],
       ['2011-05-12', 'Antoni Martí|Q24801|='],
       ['2015-03-23', 'Gilbert Saboya Sunyé|Q3105855|=', { name: 'Saboya' }],
       ['2015-04-01', 'Antoni Martí|Q24801|='],
       ['2019-05-16', 'Xavier Espot Zamora|Q21001195|=', { name: 'Espot' }]
     ]),
     // The two Co-Princes: the French head of state (Wikidata Q19808845; Sarkozy's days, which Wikidata gives as years,
-    // are his predecessor's end and his successor's start there; Bidault's end and Blum's months as chairman of the
-    // Provisional Government, as French head of state, from rulers.org) and the Bishop of Urgell (rulers.org's days;
-    // apostolic administrators acting in 1940-43 and 1969-71; Iglesias's resignation took effect on 29 April 1969, as
-    // his Catalan Wikipedia article and Wikidata date it, against rulers.org's 19 June, and Malla is dated from 19 June
-    // as rulers.org and his Catalan article date him, against Wikidata's 29 April, so the seven weeks between are left
-    // empty; second reader, 16 November 2026). A French president's party is not an Andorran party,
-    // so build-parties.mjs gives the French Co-Prince none (noParties).
+    // are his predecessor's end and his successor's start there; Bidault to 16 December 1946 as chairman of the
+    // Provisional Government, as French head of state, from his French and English articles; Poher acted from
+    // Pompidou's death on 2 April 1974, as the French Senate's page on him and the French and English lists date it,
+    // against Wikidata's 3 April). Blum's five weeks, from 16 December 1946 to 16 January 1947, as chairman of the
+    // Provisional Government, the office that made Bidault head of state: English Wikipedia's "List of presidents of
+    // France" (revision 1381038946, no reference on the row), French Wikipedia's "Liste des chefs d'État français"
+    // (revision 241242427, his row in the Provisional Government's table) and Wikidata (Q18434, P39 Q23004974, from
+    // 16 December 1946; Auriol's Co-Prince statement, Q158772, names Blum as his predecessor). Against them, French
+    // Wikipedia's "Liste des présidents de la République française" (revision 240836626, citing elysee.fr) says Auriol
+    // exercised the head of state's functions from the constitution of 27 October 1946, with no day; Wikidata's
+    // 3 December 1946 for Auriol is his presidency of the National Assembly, not a head of state's term. The majority
+    // is followed, as in the head-of-state lane of France (HOS_GAPS in leader-corrections.mjs; the fixer, 27 November
+    // 2026). The Bishop of Urgell: Guitart to his death on 30 January 1940 (his Catalan article, revision 39164253, and
+    // English article, revision 1342282087, and Wikidata's date of death, P570), against 31 January in Wikidata's
+    // "position held" and the Catalan list (revision 38198573); La Vanguardia's archive refused the request and was
+    // left. Apostolic administrators acted in 1940-43 and 1969-71: Fornesa from February 1940, day not confirmed (the
+    // Catalan list's 2 February, a row that cites nothing; his Catalan article, revision 38890935, cites only
+    // enciclopedia.cat, which is not a source, so it is not counted, and Wikidata's dates are imported from it; he has
+    // no English article); Iglesias from 4 April 1943, his possession of the see, as the bishops are dated (the Catalan
+    // list, his Catalan article, revision 38697031, and his English article; the fixer, 27 November 2026: until then
+    // Fornesa's article's 15 April), with his oath as Co-Prince on 1 May 1943 (the Council's act, summary entry 1.217)
+    // and Wikidata's 29 December 1942, his appointment, named; Iglesias left on 29 April 1969 (the Council's act
+    // of 30 April 1969, entry 1.294: "els dies 28 i 29 han plegat els dos coprínceps"; his Catalan article; Wikidata)
+    // and Malla took possession as Co-Prince on 19 June 1969 (entry 1.295; his Catalan article; Wikidata's 29 April,
+    // imported from Italian and English Wikipedia, is his appointment), so the seven weeks between are left empty.
+    // Martí i Alanis from 31 January 1971, when he took possession of the see (his Catalan article, citing La
+    // Vanguardia of 2 February 1971; his English article; Wikidata; the Council's act of 17 March 1971, entry 1.301,
+    // records his possession as Co-Prince); Vives from 12 May 2003 (Wikidata, the Catalan list, his English and
+    // Catalan articles; he took the oath as Co-Prince on 10 July 2003); Serrano Pentinat from 31 May 2025 (Wikidata,
+    // citing andorradifusio.ad; the Catalan list; his English article). So the bishops are dated by the see, except
+    // Malla, whose possession as Co-Prince is the only free day for him (read 26 and 27 November 2026). A French president's party is not an Andorran party, so build-parties.mjs gives the
+    // French Co-Prince none (noParties).
     offices: [
       ...officeChain('hos', [
         ['1924-06-13', 'Gaston Doumergue|Q296064|='],
@@ -371,8 +474,8 @@ export const LISTS = {
         ['1954-01-16', 'René Coty|Q158768|='],
         ['1959-01-08', 'Charles de Gaulle|Q2042|='],
         ['1969-04-28', 'Alain Poher|Q12950|='],
-        ['1969-06-20', 'Georges Pompidou|Q2185|=', '1974-04-02'],
-        ['1974-04-03', 'Alain Poher|Q12950|='],
+        ['1969-06-20', 'Georges Pompidou|Q2185|='],
+        ['1974-04-02', 'Alain Poher|Q12950|='],
         ['1974-05-27', 'Valéry Giscard d\'Estaing|Q2124|='],
         ['1981-05-21', 'François Mitterrand|Q2038|='],
         ['1995-05-17', 'Jacques Chirac|Q2105|='],
@@ -381,9 +484,9 @@ export const LISTS = {
         ['2017-05-14', 'Emmanuel Macron|Q3052772|=']
       ]).map(o => ({ ...o, noParties: true })),
       ...officeChain('hos', [
-        ['1920-06-01', 'Justí Guitart i Vilardebó|Q2402274|=', '1940-01-31'],
-        ['1940-02-02', 'Ricard Fornesa i Puigdemasa|Q3430238'],
-        ['1943-04-15', 'Ramón Iglesias i Navarri|Q879315|=', '1969-04-29'],
+        ['1920-06-01', 'Justí Guitart i Vilardebó|Q2402274|=', '1940-01-30'],
+        ['1940-02-01', 'Ricard Fornesa i Puigdemasa|Q3430238', undefined, { startPrecision: 'month' }],
+        ['1943-04-04', 'Ramón Iglesias i Navarri|Q879315|=', '1969-04-29'],
         ['1969-06-19', 'Ramón Malla Call|Q944649|='],
         ['1971-01-31', 'Joan Martí i Alanis|Q684487|='],
         ['2003-05-12', 'Joan Enric Vives i Sicília|Q57473|='],
@@ -394,15 +497,23 @@ export const LISTS = {
   // San Marino: the two Captains Regent, who preside over the collective executive (the Congress of State) and change on
   // 1 April and 1 October: the nearest pattern in the data is Switzerland's President of the Confederation, the chair of
   // a collective executive. Both are entered, with the same days. Every semester since October 1925 is in Wikipedia's
-  // "List of captains regent of San Marino", in rulers.org and, to March 2023, in Wikidata (Q258045), and the three name
-  // the same pairs. Two semesters differ from the pattern: in 1930 Marino Lonfernini died on 10 September and Turiddu
-  // Foschi took his place on 16 September (Wikipedia, rulers.org; neither says how he died, so his exit is unknown);
-  // in 1957 the Captains Regent kept the capital until
-  // 11 October, when they recognised the provisional government formed at Rovereta on 1 October (rulers.org; Italian
-  // Wikipedia, "Fatti di Rovereta"; English Wikipedia dates it from 10 October), and the next pair took office on
-  // 27 October (the Secretary of State for Internal Affairs' notice of 23 October 1957, on the Great and General
-  // Council's site; rulers.org: 23 October; Wikidata: 1 October). San Marino has no other head of state or government,
-  // so nobody is under "Also in office".
+  // "List of captains regent of San Marino" (revision 1377833924), in the Regency's own list
+  // (reggenzadellarepubblica.sm) and, to March 2023, in Wikidata (Q258045), and the three name the same pairs (read
+  // again on 27 November 2026, with the Great and General Council's archive of acts). Two semesters differ from the
+  // pattern: in 1930 Marino Lonfernini died on 10 September (Notificazione Ufficiale n. 2 of 11 September 1930; it
+  // does not say how, so his exit is unknown) and Turiddu Foschi took his place on 16 September (Notificazione n. 3,
+  // of that day; the act spells him "Turiddo", both Wikipedias "Turiddu"); in 1957 the provisional government formed
+  // at Rovereta on 1 October holds the office from that day, as the official acts date it (Decreti 18, 19 and 20 of
+  // 23 October 1957 ratify its decrees from 1 October, annul the Regency's acts from 19 September to 14 October, and
+  // unseat the councillors who accepted the election called by "la Reggenza che si è successivamente autoprorogata
+  // nei poteri"), and the Regency's list ends Giacomini and Marani on 1 October 1957 (read again by the fixer on
+  // 27 November 2026), as Wikidata does. The old pair kept the capital and the gendarmerie until 11 October, when they
+  // recognised it (Italian Wikipedia, "Fatti di Rovereta", revision 153408108: "L'11 ottobre i reggenti misero fine
+  // alla crisi"; English Wikipedia's list dates it from 10 October); until the fixer's pass of 27 November 2026 the list
+  // followed that day, on that one free source, and now follows the official act, as the header's rule gives. The
+  // next pair took office on 27 October (Notificazione n. 2 of 23 October 1957; their first decree is of 28 October;
+  // the Regency's list and Wikidata: 1 October, the day of the semester). San Marino has no other head of state or
+  // government, so nobody is under "Also in office".
   Q238: {
     leaders: semesters([
     ['1925-10-01', 'Valerio Pasquali|Q98105684', 'Marco Marcucci|Q98105288'],
@@ -469,7 +580,7 @@ export const LISTS = {
     ['1956-04-01', 'Mario Nanni|Q98105397', 'Enrico Andreoli|Q98104843'],
     ['1956-10-01', 'Mariano Ceccoli|Q98105296', 'Eugenio Bernardini|Q98104845'],
     ['1957-04-01', 'Giordano Giacomini|Q98105100', 'Primo Marani|Q16335472'],
-    ['1957-10-11', 'Federico Bigi|Q28859148', 'Alvaro Casali|Q98104582', 'Pietro Giancecchi|Q98105538', 'Zaccaria Giovanni Savoretti|Q16335597'],
+    ['1957-10-01', 'Federico Bigi|Q28859148', 'Alvaro Casali|Q98104582', 'Pietro Giancecchi|Q98105538', 'Zaccaria Giovanni Savoretti|Q16335597'],
     ['1957-10-27', 'Marino Valdes Franciosi|Q98105392', 'Federico Micheloni|Q16677101'],
     ['1958-04-01', 'Zaccaria Giovanni Savoretti|Q16335597', 'Stelio Montironi|Q98105664'],
     ['1958-10-01', 'Domenico Forcellini|Q98104832', 'Pietro Reffi|Q3904202'],

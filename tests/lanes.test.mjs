@@ -63,12 +63,19 @@ test('a leader who is also one of Wikidata\'s office holders for the term is dra
 });
 
 test('where one office leads both state and government, a leader with no office named stays in the list\'s lane', () => {
-  // Wikidata gives the President of the United States as head of government (P6) from 1981 to 2025.
+  // Wikidata gives the President of the United States as head of government (P6) from 1981 to 2025. Since 27 November
+  // 2026 George H. W. Bush is drawn as head of state (HOS_GAPS), so every head of government drawn is the head of state
+  // of the time: the leader stays in the list's lane (head of state) and the same person's term as head of government
+  // goes with it, as for Mexico.
   const us = model('Q30');
-  for (const name of ['Donald Trump', 'Joe Biden', 'Barack Obama']) {
-    assert.ok(us.lanes.state.terms.some(t => t.full === name && t.start < '2025'), `${name} as head of state`);
-    assert.ok(us.lanes.government.terms.some(t => t.full === name && t.start < '2025'), `${name} as head of government`);
+  assert.equal(us.lanes.government.terms.length, 0);
+  assert.equal(us.lanes.state.alsoGovernment, true);
+  for (const name of ['Donald Trump', 'Joe Biden', 'Barack Obama', 'George H. W. Bush']) {
+    const t = us.lanes.state.terms.find(x => x.full === name && x.start < '2025');
+    assert.ok(t, `${name} as head of state`);
+    assert.ok((t.alsoGovernment || []).some(g => g.lane === 'government' && g.start === t.start), `${name} as head of government, with the same term`);
   }
+  assert.equal(us.lanes.state.terms.find(t => t.full === 'Ronald Reagan').kind, 'leader');
   // Where the leader before holds one office only, the office holders' lane stands (Bulgaria's Radev as Prime Minister).
   const c = fake([L('Ann Able', '1950-01-01', '1960-01-01'), L('Ben Bold', '1960-01-01', '1970-01-01', { position: undefined })],
     [O('hos', 'Ben Bold', '1960-01-01', '1970-01-01')]);
@@ -342,14 +349,19 @@ test('every state\'s display name reads rightly inside a sentence, with "the" on
 });
 
 test('the previous holder is the bar this term follows within a month; else it is not drawn and no link is spoken of', () => {
-  // George H. W. Bush, from Archigos, is not drawn as head of state of the United States: Clinton's previous holder is not
-  // Reagan, and the lane says which years have no term drawn.
+  // Slovakia's presidency was vacant from 3 March 1998 to 14 June 1999, so none is drawn: Rudolf Schuster's previous holder is not Michal Kováč, and the lane
+  // says which years have no term drawn.
+  const sk = model('Q214');
+  const schuster = sk.lanes.state.terms.find(t => t.full === 'Rudolf Schuster');
+  assert.equal(schuster.prev, null);
+  assert.equal(schuster.prevGap, true);
+  assert.equal(laneLabel(sk.lanes.state, 'state'), `Head of state: ${sk.lanes.state.terms.length} terms drawn; none drawn for 1998–1999`);
+  // Where the term before is drawn within a month, it is the previous holder (Clinton follows George H. W. Bush, drawn
+  // as head of state of the United States since 27 November 2026).
   const us = model('Q30');
   const clinton = us.lanes.state.terms.find(t => t.full === 'Bill Clinton');
-  assert.equal(clinton.prev, null);
-  assert.equal(clinton.prevGap, true);
-  assert.equal(us.lanes.government.terms.find(t => t.full === 'Bill Clinton').prev, us.lanes.government.terms.find(t => t.full === 'George H. W. Bush').id);
-  assert.equal(laneLabel(us.lanes.state, 'state'), `Head of state: ${us.lanes.state.terms.length} terms drawn; none drawn for 1989–1993`);
+  assert.equal(clinton.prev, us.lanes.state.terms.find(t => t.full === 'George H. W. Bush').id);
+  assert.equal(clinton.prevGap, false);
   // A co-holder in another row is not the previous holder: each row follows its own.
   const co = buildModel(fake([], [O('hos', 'A One', '1950-01-01', '1950-07-01'), O('hos', 'B Two', '1950-01-01', '1950-07-01'),
     O('hos', 'C Three', '1950-07-01', '1951-01-01'), O('hos', 'D Four', '1950-07-01', '1951-01-01')]), 'QTEST', opts());
@@ -492,10 +504,13 @@ test('HANDOFF.md and README.md name the lanes\' files, and README\'s example of 
     assert.ok(handoff.includes(`\`${f}\``), `HANDOFF.md names ${f}`);
     assert.ok(readme.includes(`\`${f}\``), `README.md names ${f}`);
   }
-  const m = model('Q30');
-  const lane = LANES.find(l => laneLabel(m.lanes[l], l).includes('none drawn for 1989–1993'));
-  assert.ok(lane, 'a lane of the United States has none drawn for 1989–1993');
-  assert.ok(readme.includes(`the United States' head of ${lane}, "none drawn for 1989–1993"`), `README names the ${lane} lane`);
+  const m = model('Q214');
+  const lane = LANES.find(l => laneLabel(m.lanes[l], l).includes('none drawn for 1998–1999'));
+  assert.ok(lane, 'a lane of Slovakia has none drawn for 1998–1999');
+  assert.ok(readme.includes(`Slovakia's head of ${lane}, "none drawn for 1998–1999"`), `README names the ${lane} lane`);
+  // The United States is no longer the example: since 27 November 2026 its lanes are one (George H. W. Bush drawn).
+  assert.ok(!readme.includes('"none drawn for 1989–1993"'));
+  assert.ok(!LANES.some(l => laneLabel(model('Q30').lanes[l], l).includes('none drawn')));
 });
 
 test('short bars are painted over the long ones, and the list keeps date order; San Marino draws in under 100 ms', () => {
@@ -654,8 +669,11 @@ pageTest('each bar is reached by keyboard in date order, shows a focus ring, and
 
 pageTest('a term\'s source is its own record: VM\'s own list in Monaco, Wikidata\'s head of state (P35) in the United Kingdom', async () => {
   const mc = await open('#y=2025&c=Q235');
-  assert.match(await detailOf(mc, 'Head of government: Christophe Mirmand'), /Source: VM’s own list, each entry read from at least two of Wikidata, Wikipedia’s lists of office holders and rulers\.org \(B\. Schemmel\)\./);
+  // Since 27 November 2026 the lists name only free sources (rulers.org allows not-for-profit use only).
+  // Since the fixer's pass of 27 November 2026 it says "most entries", as not every entry has two sources.
+  assert.match(await detailOf(mc, 'Head of government: Christophe Mirmand'), /Source: VM’s own list, built from Wikidata, Wikipedia’s lists and articles and the state’s official acts and records: most entries are read from two or more of them, and an entry that rests on one, or on sources that disagree, says so in scripts\/leader-lists\.mjs\./);
   assert.match(await mc.textContent('#lanes-source'), /and from VM’s own list/);
+  assert.doesNotMatch(await mc.textContent('#lanes-source'), /rulers\.org/);
   await close(mc);
   const uk = await open('#y=1990&c=Q145');
   assert.match(await detailOf(uk, 'Head of state: Elizabeth II'), /Source: Wikidata \(CC0\): the state’s head of state \(P35\)\./);
@@ -669,6 +687,12 @@ pageTest('a term\'s source is its own record: VM\'s own list in Monaco, Wikidata
   assert.match(d, /Source: VM’s list of heads of state that Wikidata’s head of state \(P35\) leaves out \(scripts\/leader-corrections\.mjs\): the person’s “position held” \(P39\)/);
   assert.match(await g5.textContent('#lanes-source'), /heads of state that Wikidata’s head of state \(P35\) leaves out, added in scripts\/leader-corrections\.mjs/);
   await close(g5);
+  // France had no head of state drawn from 1926 to 1946 until 27 November 2026 (HOS_GAPS): Lebrun's term is drawn and
+  // names its source.
+  const fr = await open('#y=1935&c=Q142');
+  assert.match(await detailOf(fr, 'Head of state: Albert Lebrun'), /Source: VM’s list of heads of state that Wikidata’s head of state \(P35\) leaves out \(scripts\/leader-corrections\.mjs\): the person’s “position held” \(P39\) in Wikidata \(CC0\)/);
+  assert.match(await fr.textContent('#lanes-source'), /Wikipedia’s lists and articles or the state’s official pages/);
+  await close(fr);
 });
 
 pageTest('Andorra: a Co-Prince\'s term does not name the other Co-Prince as the previous holder', async () => {
@@ -779,14 +803,14 @@ pageTest('the real succession file, where it exists, has the agreed shape and la
   const page = await open('#y=1990&c=Q145');
   await page.waitForFunction(n => document.querySelectorAll('#lanes .succession').length >= n, uk.length);
   assert.match(await page.textContent('#lanes-source'), /Family links between holders: Wikidata \(CC0\)/);
-  // A term whose previous holder is not drawn says so (Bill Clinton: George H. W. Bush, from Archigos, is not drawn).
+  // A term whose previous holder is not drawn says so (Rudolf Schuster: Slovakia's presidency was vacant before him).
   await close(page);
-  const us = await open('#y=1995&c=Q30');
-  await us.waitForFunction(() => document.querySelector('#lanes-source'));
-  assert.match(await detailOf(us, 'Head of state: Bill Clinton'), /The previous holder is not drawn here, so no family link is shown\./);
-  assert.match(await us.getAttribute('#lanes [role="list"][data-lane="state"]', 'aria-label'), /; none drawn for 1989–1993/);
-  assert.ok(await us.locator('#lanes .lane-hole').count() >= 1);
-  await close(us);
+  const sk = await open('#y=2000&c=Q214');
+  await sk.waitForFunction(() => document.querySelector('#lanes-source'));
+  assert.match(await detailOf(sk, 'Head of state: Rudolf Schuster'), /The previous holder is not drawn here, so no family link is shown\./);
+  assert.match(await sk.getAttribute('#lanes [role="list"][data-lane="state"]', 'aria-label'), /; none drawn for 1998–1999/);
+  assert.ok(await sk.locator('#lanes .lane-hole').count() >= 1);
+  await close(sk);
 });
 
 pageTest('overlapping terms stack into rows, and the lane says how many: Bosnia and Herzegovina\'s Presidency', async () => {
@@ -797,13 +821,19 @@ pageTest('overlapping terms stack into rows, and the lane says how many: Bosnia 
   await close(page);
 });
 
-pageTest('at 1366 px the United States\' lanes open where a name fits on the bars, one in each lane at least', async () => {
-  const page = await open('#y=1990&c=Q30', { viewport: { width: 1366, height: 900 } });
+pageTest('at 1366 px the United Kingdom\'s lanes open where a name fits on the bars, one in each lane at least, and the United States\' one lane too', async () => {
+  const page = await open('#y=1990&c=Q145', { viewport: { width: 1366, height: 900 } });
   for (const lane of LANES) {
     const names = await page.$$eval(`#lanes .lane[data-lane="${lane}"] .lane-text`, els => els.map(e => e.textContent).filter(Boolean));
     assert.ok(names.length >= 1, `${lane}: ${names.length} names`);
   }
   await close(page);
+  // Since 27 November 2026 the United States has one lane for both offices (George H. W. Bush drawn as head of state).
+  const us = await open('#y=1990&c=Q30', { viewport: { width: 1366, height: 900 } });
+  assert.equal(await us.locator('#lanes [data-lane="government"]').count(), 0);
+  const names = await us.$$eval('#lanes .lane[data-lane="state"] .lane-text', els => els.map(e => e.textContent).filter(Boolean));
+  assert.ok(names.length >= 1, `state: ${names.length} names`);
+  await close(us);
 });
 
 pageTest('Mexico: one lane for both offices, no hatched lane, the words under it, and the head of government\'s dates in the term (P1)', async () => {

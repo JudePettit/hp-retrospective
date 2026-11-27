@@ -227,7 +227,12 @@ export function buildModel(c, key, { firstYear, lastYear, today, links = [] }) {
       // VM's hand-built list and Wikidata's office holders disagree by more than 31 days at either end (Liechtenstein:
       // the list's Hans-Adam II from 1984, as his father's deputy, to 2004; his reign from 1989 to the present): the
       // reign is drawn from the office holders, and the list's term only for the days outside it.
-      const apart = l.source === 'leader-lists' ? mine.filter(o => Math.abs(dayOf(o.start) - s) > WINDOW || Math.abs(endDay(o.end, !o.end) - e) > WINDOW) : [];
+      // The same where the office holder is one of VM's heads of state added by hand (`reigns`: REIGNS and HOS_GAPS in
+      // scripts/leader-corrections.mjs): its dates win over a Wikidata leader's (the fixer, 27 November 2026: Georges
+      // Bidault's "position held" splits at 14 October 1946, where he became Prime Minister, and the lane cut his term
+      // as head of state there, though he held it to 16 December).
+      const differs = o => Math.abs(dayOf(o.start) - s) > WINDOW || Math.abs(endDay(o.end, !o.end) - e) > WINDOW;
+      const apart = mine.filter(o => (l.source === 'leader-lists' || o.rec.source === 'reigns') && differs(o));
       if (apart.length) {
         const o = apart[0], os = dayOf(o.start), oe = endDay(o.end, !o.end);
         if (s < os - HANDOVER) terms.push({ ...t, part: `${k}a`, end: o.start, endPrecision: undefined });
@@ -300,7 +305,8 @@ export function buildModel(c, key, { firstYear, lastYear, today, links = [] }) {
 
   // One person in both offices. Where every head of government drawn is the head of state of the time, within 31 days
   // at each end of the same person's term in the head of state's lane (Mexico, whose head of government in Wikidata is
-  // Claudia Sheinbaum, from 2024, as she is its head of state; Cyprus; the Dominican Republic; until the fixer's pass of
+  // Claudia Sheinbaum, from 2024, as she is its head of state; Cyprus; the Dominican Republic; the United States since
+  // George H. W. Bush was drawn as head of state on 27 November 2026; until the fixer's pass of
   // 26 November 2026 Saudi Arabia, whose heads of government Wikidata gave as its kings),
   // a second lane would repeat the first and show only hatching for the years Wikidata names no head of government.
   // So no second lane is drawn: each such term goes with the same person's term as head of state (`alsoGovernment`,

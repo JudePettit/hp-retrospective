@@ -517,6 +517,10 @@ function leftOutNote(key, name0, model) {
         : ` ${n0(anyway)} of them ${anyway === 1 ? 'is' : 'are'} in the lanes anyway, from Wikidata’s own list of the office; the others are only in the list.`);
 }
 // The sources of the lanes for the state shown (the file names are in the footer and the README).
+// The source of the eleven hand-built lists (scripts/leader-lists.mjs). Until 27 November 2026 it said every entry
+// was read from two of these, which some entries do not meet (Dominica's Presidents rest on Wikipedia's list;
+// a few days rest on one source and say so), so it now says "most" (fixer, 27 November 2026).
+const OWN_LIST = 'VM’s own list, built from Wikidata, Wikipedia’s lists and articles and the state’s official acts and records: most entries are read from two or more of them, and an entry that rests on one, or on sources that disagree, says so in scripts/leader-lists.mjs';
 function lanesSourceNote(key, name0, model) {
   const links = state.succession && state.succession.some(x => x.country === key);
   // Terms whose record names its own source (scripts/leader-corrections.mjs): heads of state that Wikidata's P35 leaves
@@ -524,8 +528,8 @@ function lanesSourceNote(key, name0, model) {
   const own = LANES.flatMap(l => [...model.lanes[l].terms, ...model.lanes[l].terms.flatMap(t => t.alsoGovernment || [])]).filter(t => t.rec?.sourceNote);
   const reigns = own.some(t => t.rec.source === 'reigns'), byHand = own.some(t => t.rec.source !== 'reigns');
   return `The lanes are drawn from Wikidata (CC0): the heads of state and government of ${inProse(name0)} and its leaders’ offices` +
-    `${model.listed ? '; and from VM’s own list, each entry read from at least two of Wikidata, Wikipedia’s lists of office holders and rulers.org (B. Schemmel)' : ''}` +
-    `${reigns ? '; with the heads of state that Wikidata’s head of state (P35) leaves out, added in scripts/leader-corrections.mjs from their “position held” (P39) in Wikidata or their English Wikipedia articles' : ''}` +
+    `${model.listed ? `; and from ${OWN_LIST}` : ''}` +
+    `${reigns ? '; with the heads of state that Wikidata’s head of state (P35) leaves out, added in scripts/leader-corrections.mjs from their “position held” (P39) in Wikidata, Wikipedia’s lists and articles or the state’s official pages, as each term’s source names them' : ''}` +
     `${byHand ? '; with the terms put right in scripts/leader-corrections.mjs, each naming its source' : ''}.` +
     `${links ? ' Family links between holders: Wikidata (CC0).' : ''}`;
 }
@@ -708,9 +712,9 @@ function chooseTerm(id, { focus = false } = {}) {
 function termSource(t, model) {
   // A record that names its own source (scripts/leader-corrections.mjs: REIGNS, and offices listed or dated by hand).
   if (t.rec?.sourceNote) return t.rec.sourceNote;
-  if (t.kind === 'office') return model.listed ? 'VM’s own list, each entry read from at least two of Wikidata, Wikipedia’s lists of office holders and rulers.org (B. Schemmel)'
+  if (t.kind === 'office') return model.listed ? OWN_LIST
     : `Wikidata (CC0): the state’s ${t.lane === 'state' ? 'head of state (P35)' : 'head of government (P6)'}`;
-  if (t.rec.source === 'leader-lists') return 'VM’s own list, each entry read from at least two of Wikidata, Wikipedia’s lists of office holders and rulers.org (B. Schemmel)';
+  if (t.rec.source === 'leader-lists') return OWN_LIST;
   return t.rec.archigos ? 'Wikidata (CC0): the person’s “position held” (P39), whose dates agree with Archigos 4.1’s within 31 days' : 'Wikidata (CC0)';
 }
 // The chosen term in words: name, office, dates, party and source, as the list gives them, and its family link.

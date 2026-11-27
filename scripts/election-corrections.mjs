@@ -177,6 +177,149 @@ export const ELECTIONS = [
     // Wikidata's only point in time (P585) is 8 June 1998, a slip for the 28th.
     sources: ['English Wikipedia\'s article (lead: "On 28 June 1998 a referendum on a new abortion law was conducted in Portugal")',
       'Portugal\'s Comissão Nacional de Eleições, "Referendo Nacional 1998" (cne.pt): "Domingo, 28 Junho, 1998", on the decriminalisation of abortion in the first ten weeks']
+  },
+  // Read on 27 November 2026 (the names group's two readers). Wikidata's only point in time (P585) is 2 February 2025.
+  // Its one reference is an IPU page retrieved on 18 February 2021, before the day was set (the English article cites
+  // the Vaterland of 13 March 2024 for the day): a forecast. Liechtenstein's own results site says 9 February.
+  {
+    key: 'Q347', wd: 'Q105556112', title: '2025 Liechtenstein general election', date: '2025-02-09',
+    sources: ['English Wikipedia\'s article (lead and infobox: "held in Liechtenstein on 9 February 2025"; revision 1383789599)',
+      'German Wikipedia\'s article "Landtagswahl in Liechtenstein 2025" ("fand am 9. Februar 2025 statt"; revision 258257903)',
+      'landtagswahlen.li, the Liechtenstein Government\'s results site (its contact page names the Stabsstelle Regierungskanzlei), "Landtagswahlen 2025 - Ergebnisse" (/resultat/16): "Resultat vom 09.02.2025"']
+  }
+];
+
+// National votes the Wikidata fetch in build-data.mjs does not reach at all (Builder 2 of 27 November 2026, from the
+// votes group's two readers, read that day). Each is added to its state as ELECTIONS adds a missed vote, with the
+// date its sources give; a later fetch that does reach one takes this date too. They are not corrections of a wrong
+// date, so the footer counts them on their own (index.html, #votes-added).
+// - Japan (63): its general elections to the House of Representatives (Wikidata class Q11267645) and regular
+//   elections to the House of Councillors (Q11267647) sit two steps of "subclass of" below "election" (through
+//   Q111655411), and the fetch takes one step, so Japan had no vote at all.
+// - Mexico 2012, 2018 and 2024 and Nicaragua 2021: each item is typed only "group of elections" (Q76853179), which
+//   is not among the fetch's types.
+// - Germany's head of state referendum of 1934: a national vote that the fetch's rule against regional titles drops
+//   for the word "state".
+// The fetch's rule is not widened here. The readers found that a wider rule would also bring in umbrella items, same-day
+// duplicates and the general elections of five more states whose days are not yet checked (Guatemala's of 2023 would
+// come in with its second round's day), and that clearing a state's cached row before a failed query empties its list.
+const DMY = d => { const [y, m, dd] = d.split('-'); return `${+dd} ${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][m - 1]} ${y}`; };
+// The Statistics Bureau of Japan's long-term tables (Historical Statistics of Japan, chapter 27), read in the Internet
+// Archive's copies of January 2006 of stat.go.jp/data/chouki/zuhyou/ (the live files answer 404): table 27-10 (parts a
+// and b) gives the day of every general election of the House of Representatives from 1928 to 2003, and table 27-11
+// (copy 20060104111057) every regular election of the House of Councillors from 1947 to 2004.
+const STAT_JP = {
+  hor: 'Statistics Bureau of Japan, Historical Statistics of Japan, table 27-10 (general elections of the House of Representatives), Internet Archive copy of stat.go.jp/data/chouki/zuhyou/27-10-a.xls and 27-10-b.xls',
+  hoc: 'Statistics Bureau of Japan, Historical Statistics of Japan, table 27-11 (regular elections of the House of Councillors), Internet Archive copy 20060104111057 of stat.go.jp/data/chouki/zuhyou/27-11.xls'
+};
+const JP = (wd, title, date, rev) => {
+  const hoc = /Councillors/.test(title), y = +date.slice(0, 4);
+  return { key: 'Q17', wd, title, date, sources: [`Wikidata ${wd}, point in time (P585): ${DMY(date)}`,
+    `English Wikipedia's article (infobox: ${DMY(date)}; revision ${rev})`,
+    ...((hoc ? y <= 2004 : y <= 2003) ? [`${STAT_JP[hoc ? 'hoc' : 'hor']}: the same day`] : [])] };
+};
+export const MISSED = [
+  JP('Q1766365', '1928 Japanese general election', '1928-02-20', 1343881912),
+  JP('Q2502824', '1930 Japanese general election', '1930-02-20', 1343881890),
+  JP('Q1766378', '1932 Japanese general election', '1932-02-20', 1343881077),
+  JP('Q2655399', '1936 Japanese general election', '1936-02-20', 1343882543),
+  JP('Q2655369', '1937 Japanese general election', '1937-04-30', 1369755363),
+  JP('Q1766351', '1942 Japanese general election', '1942-04-30', 1343880903),
+  JP('Q745192', '1946 Japanese general election', '1946-04-10', 1343882436),
+  JP('Q841318', '1947 Japanese House of Councillors election', '1947-04-20', 1365980025),
+  JP('Q176661', '1947 Japanese general election', '1947-04-25', 1343882171),
+  JP('Q1766371', '1949 Japanese general election', '1949-01-23', 1370551450),
+  JP('Q6158192', '1950 Japanese House of Councillors election', '1950-06-04', 1365980138),
+  JP('Q11600664', '1952 Japanese general election', '1952-10-01', 1370551438),
+  JP('Q1766357', '1953 Japanese general election', '1953-04-19', 1352467750),
+  JP('Q1766470', '1953 Japanese House of Councillors election', '1953-04-24', 1366392791),
+  JP('Q6158640', '1955 Japanese general election', '1955-02-27', 1325594653),
+  JP('Q841922', '1956 Japanese House of Councillors election', '1956-07-08', 1366395414),
+  JP('Q6158643', '1958 Japanese general election', '1958-05-22', 1352907585),
+  JP('Q11270524', '1959 Japanese House of Councillors election', '1959-06-02', 1365980287),
+  JP('Q6158646', '1960 Japanese general election', '1960-11-20', 1352907573),
+  JP('Q6158203', '1962 Japanese House of Councillors election', '1962-07-01', 1365980466),
+  JP('Q6158649', '1963 Japanese general election', '1963-11-21', 1352907545),
+  JP('Q8015791', '1965 Japanese House of Councillors election', '1965-07-04', 1366576551),
+  JP('Q6158653', '1967 Japanese general election', '1967-01-29', 1354959783),
+  JP('Q8017175', '1968 Japanese House of Councillors election', '1968-07-07', 1366394722),
+  JP('Q835628', '1969 Japanese general election', '1969-12-27', 1354961074),
+  JP('Q8016858', '1971 Japanese House of Councillors election', '1971-06-27', 1365980597),
+  JP('Q843180', '1972 Japanese general election', '1972-12-10', 1354954174),
+  JP('Q8016526', '1974 Japanese House of Councillors election', '1974-07-07', 1386760742),
+  JP('Q1513952', '1976 Japanese general election', '1976-12-05', 1352907347),
+  JP('Q841601', '1977 Japanese House of Councillors election', '1977-07-10', 1366486502),
+  JP('Q2915619', '1979 Japanese general election', '1979-10-07', 1352907266),
+  // Both houses were elected on 22 June 1980 and again on 6 July 1986.
+  JP('Q1049953', '1980 Japanese general election', '1980-06-22', 1364961195),
+  JP('Q841587', '1980 Japanese House of Councillors election', '1980-06-22', 1373193693),
+  JP('Q6158210', '1983 Japanese House of Councillors election', '1983-06-26', 1366393016),
+  JP('Q827412', '1983 Japanese general election', '1983-12-18', 1362109889),
+  JP('Q844459', '1986 Japanese general election', '1986-07-06', 1352907044),
+  JP('Q8015500', '1986 Japanese House of Councillors election', '1986-07-06', 1366392762),
+  JP('Q598970', '1989 Japanese House of Councillors election', '1989-07-23', 1383796952),
+  JP('Q658649', '1990 Japanese general election', '1990-02-18', 1374302128),
+  // The free sources disagree on this one, so it is dated by the official table, with Japanese Wikipedia, which
+  // also quotes the proclamation calling the election for that day ("平成四年七月二十六日に、参議院議員の通常選挙を施行
+  // することを公示する詔書"). Wikidata's 7 July 1992 is a Tuesday; English Wikipedia's 23 July, a Thursday, is a slip in an
+  // article that cites the same table. Read again by Builder 2 on 27 November 2026.
+  {
+    key: 'Q17', wd: 'Q6158217', title: '1992 Japanese House of Councillors election', date: '1992-07-26',
+    sources: [`${STAT_JP.hoc}: the 16th regular election, Heisei 4.7.26, "July 26, 1992"`,
+      'Japanese Wikipedia\'s article "第16回参議院議員通常選挙" (投票日: 1992年7月26日; revision 111564528)',
+      'not followed: Wikidata Q6158217, point in time (P585): 7 July 1992; English Wikipedia\'s article (infobox: 23 July 1992; revision 1375456892)']
+  },
+  JP('Q205108', '1993 Japanese general election', '1993-07-18', 1387849710),
+  JP('Q6158219', '1995 Japanese House of Councillors election', '1995-07-23', 1375283615),
+  JP('Q165265', '1996 Japanese general election', '1996-10-20', 1376094498),
+  JP('Q834174', '1998 Japanese House of Councillors election', '1998-07-12', 1383796835),
+  JP('Q1558418', '2000 Japanese general election', '2000-06-25', 1382951556),
+  JP('Q906207', '2001 Japanese House of Councillors election', '2001-07-29', 1371686101),
+  JP('Q1144707', '2003 Japanese general election', '2003-11-09', 1374772956),
+  JP('Q827362', '2004 Japanese House of Councillors election', '2004-07-11', 1368375252),
+  JP('Q672503', '2005 Japanese general election', '2005-09-11', 1379588896),
+  JP('Q931709', '2007 Japanese House of Councillors election', '2007-07-29', 1375214925),
+  JP('Q721058', '2009 Japanese general election', '2009-08-30', 1383410004),
+  JP('Q934060', '2010 Japanese House of Councillors election', '2010-07-11', 1368206138),
+  JP('Q866266', '2012 Japanese general election', '2012-12-16', 1386089145),
+  JP('Q1156325', '2013 Japanese House of Councillors election', '2013-07-21', 1374300514),
+  JP('Q4638550', '2014 Japanese general election', '2014-12-14', 1374772973),
+  JP('Q20982907', '2016 Japanese House of Councillors election', '2016-07-10', 1374300900),
+  JP('Q20983100', '2017 Japanese general election', '2017-10-22', 1387900393),
+  JP('Q55388058', '2019 Japanese House of Councillors election', '2019-07-21', 1386513078),
+  JP('Q42418054', '2021 Japanese general election', '2021-10-31', 1387322667),
+  JP('Q108418499', '2022 Japanese House of Councillors election', '2022-07-10', 1386513111),
+  JP('Q109383045', '2024 Japanese general election', '2024-10-27', 1387322596),
+  JP('Q125699140', '2025 Japanese House of Councillors election', '2025-07-20', 1386532849),
+  JP('Q131309666', '2026 Japanese general election', '2026-02-08', 1387322522),
+  // Mexico: each general election chose the President, the 500 deputies and the 128 senators. No INE page for 2012 was
+  // found (ine.mx/voto-y-elecciones/elecciones-2012/ answers 404).
+  {
+    key: 'Q96', wd: 'Q1584328', title: '2012 Mexican general election', date: '2012-07-01',
+    sources: ['Wikidata Q1584328, point in time (P585): 1 July 2012', 'English Wikipedia\'s article (infobox: 1 July 2012; revision 1379907173)']
+  },
+  {
+    key: 'Q96', wd: 'Q24961165', title: '2018 Mexican general election', date: '2018-07-01',
+    sources: ['Wikidata Q24961165, point in time (P585): 1 July 2018', 'English Wikipedia\'s article (infobox: 1 July 2018; revision 1375344701)',
+      'Mexico\'s Instituto Nacional Electoral, ine.mx/voto-y-elecciones/elecciones-2018/: "La elección es el 1 de julio"']
+  },
+  {
+    key: 'Q96', wd: 'Q113317928', title: '2024 Mexican general election', date: '2024-06-02',
+    sources: ['Wikidata Q113317928, point in time (P585): 2 June 2024', 'English Wikipedia\'s article (infobox: 2 June 2024; revision 1386802070)',
+      'Mexico\'s Instituto Nacional Electoral, Central Electoral, posts of 3 June 2024 (boletín 352, the quick count for the Presidency, the Chamber and the Senate, the day after the vote)']
+  },
+  // Nicaragua: President, National Assembly and Central American Parliament. The electoral council's site, cse.gob.ni,
+  // refused the request ("Request Rejected") and was left alone.
+  {
+    key: 'Q811', wd: 'Q104815252', title: '2021 Nicaraguan general election', date: '2021-11-07',
+    sources: ['Wikidata Q104815252, point in time (P585): 7 November 2021', 'English Wikipedia\'s article (infobox: 7 November 2021; revision 1387209255)']
+  },
+  // Germany: the vote on uniting the offices of President and Chancellor, seventeen days after Hindenburg's death.
+  // Wikidata gives Germany (Q183) as its country, so it sits under the state's items; the title rule in build-data.mjs
+  // drops every title with "state" in it. Read again by Builder 2 on 27 November 2026.
+  {
+    key: 'Q41304', wd: 'Q4305909', title: '1934 German head of state referendum', date: '1934-08-19',
+    sources: ['Wikidata Q4305909, point in time (P585): 19 August 1934', 'English Wikipedia\'s article (infobox and lead: held in Nazi Germany on 19 August 1934; revision 1384838231)']
   }
 ];
 
@@ -372,14 +515,17 @@ export const NOT_NATIONAL = [
 // ballots (the Czech Social Democrats' of 2018, KINAL's of 2022 in Greece), and articles about a campaign, an opinion
 // poll or a list of nominations (25 November 2026). Also votes that were planned and never held, each as its English
 // Wikipedia article says (read on 25 November 2026); Wikidata dates most of them only to the year.
-export const NOT_VOTES = [
+// The two kinds are kept apart (NOT_PUBLIC, NEVER_HELD) so that the footer can count each (27 November 2026).
+export const NOT_PUBLIC = [
   ['Q30', 'Q25046283', '1973 United States vice presidential confirmation'],
   ['Q30', 'Q25046275', '1974 United States vice presidential confirmation'],
   ['Q40', 'Q5027875', 'Campaigning in the 2008 Austrian legislative election'],
   ['Q213', 'Q55099363', '2018 Czech Social Democratic Party government referendum'],
   ['Q41', 'Q125457737', '2022 KINAL internal referendum'],
   ['Q43', 'Q116272166', '2023 Turkish presidential election candidate nominations'],
-  ['Q43', 'Q110158559', 'Opinion polling for the 2023 Turkish parliamentary election'],
+  ['Q43', 'Q110158559', 'Opinion polling for the 2023 Turkish parliamentary election']
+];
+export const NEVER_HELD = [
   // Armenia's constitutional referendum was set for 5 April 2020 and postponed indefinitely on 16 March 2020; the
   // parliament adopted the amendment itself on 22 June 2020 (the article "2020 Armenian constitutional amendment").
   ['Q399', 'Q84502896', '2020 Armenian constitutional amendment'],
@@ -405,6 +551,7 @@ export const NOT_VOTES = [
   // page listed a vote of 2027 under its 2026 title (small corrections, D2).
   ['Q811', 'Q110453621', '2026 Nicaraguan general election'],
 ];
+export const NOT_VOTES = [...NOT_PUBLIC, ...NEVER_HELD];
 
 const DROPPED = new Set([...NOT_NATIONAL, ...NOT_VOTES].map(([key, wd]) => `${key}|${wd}`));
 const DROPPED_TITLES = new Set([...NOT_NATIONAL, ...NOT_VOTES].map(([key, , title]) => `${key}|${title}`));
@@ -471,13 +618,15 @@ const titleOf = url => { try { return decodeURIComponent(url.split('/wiki/')[1] 
 // item, so that `node scripts/leader-corrections.mjs` mends an existing data/countries.json too) and sets each vote's
 // type by voteType.
 const inside = (c, date) => !c.spans || c.spans.some(([s, e]) => date >= s && (!e || date <= e));
+const byDayThenTitle = (a, b) => byDay(a, b) || (isVote(a) && isVote(b) && a.type === b.type ? (a.text < b.text ? -1 : a.text > b.text ? 1 : 0) : 0);
 export function correctElections(countries) {
   for (const [key, c] of Object.entries(countries)) {
     if (!c.events) continue;
     c.events = c.events.filter(e => !(isVote(e) && e.url && DROPPED_TITLES.has(`${key}|${titleOf(e.url)}`)));
     for (const e of c.events) if (isVote(e)) e.type = voteType(e.text || titleOf(e.url || ''));
   }
-  for (const fix of ELECTIONS) {
+  // The votes the fetch misses (MISSED) are added in the same way, after the corrections.
+  for (const fix of [...ELECTIONS, ...MISSED]) {
     const url = W(fix.title);
     const home = countries[fix.key];
     if (!home) throw new Error(`election-corrections: no country ${fix.key}`);
@@ -491,7 +640,8 @@ export function correctElections(countries) {
     // month, a year) goes with the old date.
     if (found.length) for (const e of found) { e.date = fix.date; if (fix.precision) e.precision = fix.precision; else delete e.precision; }
     else events.push({ date: fix.date, type: voteType(fix.title), text: fix.title, url, ...(fix.precision ? { precision: fix.precision } : {}) });
-    home.events = events.filter(e => !(isVote(e) && e.url === url && !inside(home, e.date))).sort(byDay);
+    // Votes of one day and kind by title, as build-data.mjs lists them (Japan elected both houses on 22 June 1980).
+    home.events = events.filter(e => !(isVote(e) && e.url === url && !inside(home, e.date))).sort(byDayThenTitle);
   }
   return countries;
 }

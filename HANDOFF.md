@@ -27,6 +27,63 @@
 >   `npm test` runs the last two after the end-to-end tests.
 >
 > README.md ("Heads of state and government as lanes", "Succession inside a family") gives the rules in full.
+>
+> Added on 27 November 2026: the build that dropped rulers.org, in three parts.
+> - Why: VM uses only data free for commercial use (MP-11), and rulers.org (B. Schemmel) allows not-for-profit use
+>   only. It is no longer a source, nor is worldstatesmen.org. Every date in `scripts/leader-lists.mjs` was read again
+>   from Wikidata, Wikipedia (by revision), the states' official acts and, for single facts, Liechtenstein's lexicon:
+>   of 1,170 starts and ends, 1,137 confirmed, 28 changed, 3 given to the month (Compton 1982, with Pilgrim's end;
+>   Pallarès 1933), 2 removed with Andorra's acting Head of Government of 2011, and Blanchy's acting term of 1953 added.
+>   After the fixer's pass (below): 1,126 confirmed, 36 changed, 6 given to the month.
+>   README's Known limits says so; the page and README's table of sources no longer name it.
+> - Leaders (builder 1): `HOS_GAPS` in `scripts/leader-corrections.mjs` adds 325 heads of state in 35 states (326
+>   in 36 with Calderón of Mexico, added by builder 2), each with a `sourceNote`, so the head-of-state lanes' stretches of over a year with nobody drawn fell from 73 to 3
+>   (Czechoslovakia 1939-40, Estonia 1991-92, Slovakia 1998-99, left open as the sources do not settle them). With
+>   George H. W. Bush drawn, the United States has one lane for both offices. Kosovo: Justina Shiroka Pula from
+>   7 October 2026. `E()`, `O()` and `chain()` take `startPrecision` and `endPrecision`.
+> - Votes and names (builder 2): `MISSED` in `scripts/election-corrections.mjs` adds 68 votes the fetch does not reach
+>   (Japan's 63, Mexico 2012, 2018 and 2024, Nicaragua 2021, Germany 1934); Liechtenstein 2025 is dated 9 February;
+>   `NOT_VOTES` is split into `NOT_PUBLIC` and `NEVER_HELD`, and the footer counts in words the 154 votes left out by
+>   name. `NAME_FIXES` gives the 78 Archigos leaders shown by a short name alone their articles' names; MacArthur,
+>   Gröndal and the Saudi kings are named by their articles; Echeverría and Calderón end on 30 November.
+> - The page (builder 3): a leader's arrival in VM's own lists now carries its start's precision (`arrival` in
+>   `scripts/leader-corrections.mjs`), so Compton's return reads "May 1982", not "1 May 1982"; tests check the data
+>   and the page.
+> - Counts on 27 November 2026: 1,984 leaders (611 Archigos, 879 Wikidata, 494 VM's lists), 1,608 office terms
+>   (867 heads of state, 360 of them `reigns`), 2,403 votes.
+> - Left to do: the elections fetch rule (a second "subclass of" step, without umbrella items or unchecked votes);
+>   the group-of-elections votes of Guatemala, Costa Rica, Honduras, Bosnia and the Dominican Republic; Germany's
+>   votes of 1933-36; 28 Archigos terms that run past their end (Kenny to 2020 and others); 57 misspelt `name` fields;
+>   Kosovo's other acting presidents and its head-of-government lane before 2014; Mexico's head-of-state terms known
+>   only to the year; `npm run build-succession` (not run: it needs the network); the points the readers left
+>   unsettled (Saint Vincent 2001, Andorra's Reig and Iglesias, Blum, Somoza 1950 and others, in the build notes).
+>   Outside this repository, jdpi's q/national.html (its sources paragraph and leaders source text) and
+>   tests/national.test.mjs still name rulers.org.
+>
+> Added on 27 November 2026: the fixer's pass, answering the 33 points of the build's three readers.
+> - Dates (each from the free sources the comment names, read that day): Monaco's de Witasse from 20 November 1944,
+>   the day the Journal de Monaco (no. 4545) gives; Andorra's Bishops dated by the see (Guitart to 30 January 1940,
+>   Fornesa from February 1940 with the day not confirmed, Iglesias from 4 April 1943); Blum kept from 16 December
+>   1946 by the majority and added to France's head-of-state lane; San Marino's provisional government from
+>   1 October 1957, as the official acts date it; Dominica's change of June 1979 and Bulgaria's of July 1971 given to
+>   the month; Varadkar's first term added and Kenny ended on 14 June 2017; Echeverría and Fox dated to the day in
+>   Mexico's head-of-state lane; Sulyok ended on 20 July 2026 and Forsthoffer's acting term started that day (it had
+>   20 June); Cuba's 1933-59 terms re-sourced to the persons' articles; Benoit, Kosovo, Koo, Hyzler, Brazauskas,
+>   Kučan, Blanchy 1953, Saint Kitts and the cited lists' revision ids put right in the comments and notes.
+>   enciclopedia.cat is not a source, nor a Wikipedia page whose only source is it.
+> - `lanes.js`: in a hand-built state, or for a `reigns` term, an office term wins over a leader term whose dates
+>   differ by more than 31 days, so Bidault's head-of-state term is drawn as entered (24 June to 16 December 1946).
+> - The page says VM's own lists rest on two or more sources for most entries, not for each, and names the
+>   Liechtenstein lexicon; the footer says the 78 short names are completed from English or Spanish articles.
+> - Tests: a table test for GAP_FIXES, an overlap check between people in the head-of-state lane (eight overlaps
+>   meant), a whole-data idempotence test, and tests for each date above.
+> - Left open: Liechtenstein, June 1928: Schädler's end on 15 June rests on the German list and the lexicon, against
+>   24 June in the English list and Wikidata; not changed, for a second reading. The 326 heads of state added by
+>   `HOS_GAPS` show "no party recorded": `node scripts/build-parties.mjs` (with `BUILD_UA=vm-research`) for those
+>   36 states needs the network and a review of what it writes, so it is left to the main session. jdpi's
+>   q/national.html (lines 238 and 454) and tests/national.test.mjs (lines 495 and 502) still credit rulers.org; jdpi
+>   holds other sessions' uncommitted work, so the fixer did not edit it. The words to use there: "built by hand from
+>   Wikidata, Wikipedia's lists and articles and the states' official acts and records".
 
 # H&P Retrospective — handoff (25 Oct 2026, 19:40 UTC)
 
